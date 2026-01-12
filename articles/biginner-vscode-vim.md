@@ -7,3 +7,6 @@ published: true
 ---
 # テスト
 これはテスト投稿です
+
+# 画像テスト
+![](/images/vscode/vimoption1.md)
