@@ -9,4 +9,4 @@ published: true
 これはテスト投稿です
 
 # 画像テスト
-![](/images/vscode/vimoption1.md)
+![](/images/vscode/vimoption1.png)
