@@ -1,5 +1,5 @@
 ---
-title: "[最低限ではじめる]VS CodeでVimを始めよう！初心者向け設定と基本操作 🚀"
+title: "[ちょっと幸せになる]VS CodeでVimを始めよう！初心者向け設定と基本操作 🚀"
 emoji: "⌨️"
 type: "tech"
 topics: ["vscode", "vim"]
