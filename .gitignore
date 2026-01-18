@@ -1,2 +1,28 @@
 node_modules
 .DS_Store
+
+# Visual Studio and .NET Core files
+[Bb]in/
+[Oo]bj/
+.vs/
+.vscode/
+
+# Package files
+*.nupkg
+*.snk
+
+# User-specific files
+*.user
+*.suo
+*.bak
+*.log
+*.userosf
+*.sln.docstates
+*.vshost.*
+*.vspscc
+*.vsscc
+*.vssscc
+*.buildlog
+*.webtest
+*.testrunconfig
+*.trx
