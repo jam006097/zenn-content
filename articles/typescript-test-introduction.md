@@ -49,16 +49,17 @@ npm install -D typescript @types/node jest @types/jest ts-jest
 npx tsc --init --target es2016 --module commonjs --strict --esModuleInterop --skipLibCheck --forceConsistentCasingInFileNames
 ```
 
-上記コマンドで`tsconfig.json`を生成し、Jestのための基本的な設定を行います。続いて、`jest.config.js`を作成します。
+上記コマンドで`tsconfig.json`を生成し、Jestのための基本的な設定を行います。続いて、`jest.config.js`を作成します。以下のコマンドでファイルを作成できます。
 
-```javascript
-// jest.config.js
+```bash
+cat > jest.config.js << 'EOF'
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ["**/?(*.)+(spec|test).[tj]s?(x)"],
 };
+EOF
 ```
 
 最後に、`package.json`の`scripts`を修正し、`npm test`でJestが実行されるようにします。
