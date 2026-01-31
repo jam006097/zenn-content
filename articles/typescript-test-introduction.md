@@ -218,6 +218,27 @@ it('無効な日付が渡された場合にエラーを投げるべきである'
 
 `toThrow` マッチャーにより、「エラーを投げること」がこの関数の正しい振る舞いである、と定義できました。
 
+テストコードを実行した結果は以下です。
+``` 
+npm test
+
+> typescript-test-project@1.0.0 test
+> jest
+
+ PASS  src/date-calculator.test.ts
+  calculateDaysBetweenDates
+    ✓ 2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである (2 ms)
+    ✓ 同じ日付なら0日を返すべきである
+    ✓ 日付の順序が逆でも同じ結果を返すべきである
+    ✓ 無効な日付が渡された場合にエラーを投げるべきである (5 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        0.295 s, estimated 1 s
+Ran all test suites.
+```
+
 ### 4.2 隠れた仕様の発見：閏年
 
 日付計算には「閏年」という、見落としがちな仕様が常に存在します。これもテストによって明確にしましょう。
@@ -231,7 +252,29 @@ it('閏年をまたぐ計算が正しく行われるべきである', () => {
 });
 ```
 
-このテストを書いたことで、私たちの関数が閏年を正しく扱えることが保証されました。ちなみに、平年（例: 2023年）の場合は `toBe(1)` となるテストも追加すると、より仕様が明確になりますね。
+このテストを書いたことで、私たちの関数が閏年を正しく扱えることが保証されました。
+
+テストコードを実行した結果は以下です。
+``` 
+npm test
+
+> typescript-test-project@1.0.0 test
+> jest
+
+ PASS  src/date-calculator.test.ts
+  calculateDaysBetweenDates
+    ✓ 2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである (1 ms)
+    ✓ 同じ日付なら0日を返すべきである
+    ✓ 日付の順序が逆でも同じ結果を返すべきである
+    ✓ 無効な日付が渡された場合にエラーを投げるべきである (5 ms)
+    ✓ 閏年をまたぐ計算が正しく行われるべきである
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        0.283 s, estimated 1 s
+Ran all test suites.
+```
 
 ## おわりに
 
