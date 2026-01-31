@@ -189,8 +189,14 @@ TDDのサイクルの最後は「リファクタリング」です。テスト�
     
       // ここを追加
       it('同じ日付なら0日を返すべきである', () => {
+        // 準備 (Arrange)
         const date = new Date('2023-03-15');
-        expect(calculateDaysBetweenDates(date, date)).toBe(0);
+        
+        // 実行 (Act)
+        const days = calculateDaysBetweenDates(date, date);
+
+        // 検証 (Assert)
+        expect(days).toBe(0);
       });
     });
     ```    
@@ -214,8 +220,6 @@ TDDのサイクルの最後は「リファクタリング」です。テスト�
     ```typescript
     // src/date-calculator.ts
     export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
-      // NOTE: この関数はシンプルさのため、Dateオブジェクトを直接扱っています。
-      // より複雑な日付操作が必要なドメインでは、date-fnsのようなライブラリで抽象化する設計も有効です。
     
       const ONE_DAY_IN_MILLISECONDS = 1000 * 60 * 60 * 24;
     
@@ -255,9 +259,15 @@ TDDのサイクルの最後は「リファクタリング」です。テスト�
     
       // ここを追加
       it('日付の順序が逆でも同じ結果を返すべきである', () => {
+        // 準備 (Arrange)
         const date1 = new Date('2023-01-05');
         const date2 = new Date('2023-01-01');
-        expect(calculateDaysBetweenDates(date1, date2)).toBe(4);
+        
+        // 実行 (Act)
+        const days = calculateDaysBetweenDates(date1, date2);
+
+        // 検証 (Assert)
+        expect(days).toBe(4);
       });
     });
     ```    
@@ -344,11 +354,11 @@ describe('calculateDaysBetweenDates', () => {
   });
 
   it('無効な日付が渡された場合にエラーを投げるべきである', () => {
+    // 準備 (Arrange)
     const invalidDate = new Date('not a date');
     const validDate = new Date('2023-01-01');
 
-    // ここを追加
-    // toThrow: 関数が特定のエラーを投げることを検証する
+    // 実行 & 検証 (Act & Assert)
     expect(() => calculateDaysBetweenDates(invalidDate, validDate)).toThrow('Invalid Date object provided.');
   });
 });
@@ -454,11 +464,16 @@ describe('calculateDaysBetweenDates', () => {
     expect(() => calculateDaysBetweenDates(invalidDate, validDate)).toThrow('Invalid Date object provided.');
   });
 
-    // ここを追加
   it('閏年をまたぐ計算が正しく行われるべきである', () => {
+    // 準備 (Arrange)
     const date1 = new Date('2024-02-28'); // 2024年は閏年
     const date2 = new Date('2024-03-01');
-    expect(calculateDaysBetweenDates(date1, date2)).toBe(2);
+
+    // 実行 (Act)
+    const days = calculateDaysBetweenDates(date1, date2);
+
+    // 検証 (Assert)
+    expect(days).toBe(2);
   });
 });
 ```
