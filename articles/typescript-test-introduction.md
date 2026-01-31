@@ -95,24 +95,22 @@ TDDのサイクルは、まず **「失敗するテスト（レッド）」** �
 
     ```typescript
     // src/date-calculator.test.ts
-    // まだ存在しないファイルからimportしようとします
     import { calculateDaysBetweenDates } from './date-calculator';
-
+    
     describe('calculateDaysBetweenDates', () => {
       it('2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである', () => {
         // 準備 (Arrange)
         const date1 = new Date('2023-01-01');
         const date2 = new Date('2023-01-05');
-
+    
         // 実行 (Act)
         const days = calculateDaysBetweenDates(date1, date2);
-
+    
         // 検証 (Assert)
         expect(days).toBe(4);
       });
     });
     ```
-
 3.  **テストの失敗を確認**
     この状態でテストを実行すると、`date-calculator.ts` が存在しないため、当然エラーになります。
 
@@ -141,12 +139,10 @@ TDDのサイクルは、まず **「失敗するテスト（レッド）」** �
 
     ```typescript
     // src/date-calculator.ts
-    // とにかくテストをパスさせるためだけに「4」を返す
     export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
       return 4;
     }
     ```
-
 2.  **テストの成功を確認**
     再度テストを実行すると、今度は成功するはずです。
 
@@ -175,13 +171,29 @@ TDDのサイクルの最後は「リファクタリング」です。テスト�
     現在の実装の問題点を暴く新しいテストを追加します。「同じ日付なら0を返すはずだ」という仕様をテストコードで表現しましょう。
     `src/date-calculator.test.ts`の`describe`ブロック内に、以下の`it`ブロックを追記します。
     ```typescript
-    // src/date-calculator.test.ts (itブロックを追記)
-    it('同じ日付なら0日を返すべきである', () => {
-      const date = new Date('2023-03-15');
-      expect(calculateDaysBetweenDates(date, date)).toBe(0);
-    });
-    ```
+    // src/date-calculator.test.ts
+    import { calculateDaysBetweenDates } from './date-calculator';
     
+    describe('calculateDaysBetweenDates', () => {
+      it('2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである', () => {
+        // 準備 (Arrange)
+        const date1 = new Date('2023-01-01');
+        const date2 = new Date('2023-01-05');
+    
+        // 実行 (Act)
+        const days = calculateDaysBetweenDates(date1, date2);
+    
+        // 検証 (Assert)
+        expect(days).toBe(4);
+      });
+    
+      // ここを追加
+      it('同じ日付なら0日を返すべきである', () => {
+        const date = new Date('2023-03-15');
+        expect(calculateDaysBetweenDates(date, date)).toBe(0);
+      });
+    });
+    ```    
     このテストは現在の `return 4;` という実装では失敗し、再び「レッド」の状態に戻ります。
 
     ```bash
@@ -200,35 +212,55 @@ TDDのサイクルの最後は「リファクタリング」です。テスト�
     両方のテストをパスさせるために、ハードコードされた実装を汎用的なロジックに修正（リファクタリング）します。
 
     ```typescript
-    // src/date-calculator.ts (全体を修正)
+    // src/date-calculator.ts
     export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
       // NOTE: この関数はシンプルさのため、Dateオブジェクトを直接扱っています。
       // より複雑な日付操作が必要なドメインでは、date-fnsのようなライブラリで抽象化する設計も有効です。
-
+    
       const ONE_DAY_IN_MILLISECONDS = 1000 * 60 * 60 * 24;
-
+    
       const utcDate1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
       const utcDate2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
-
+    
       const diffMilliseconds = Math.abs(utcDate1 - utcDate2);
       return Math.floor(diffMilliseconds / ONE_DAY_IN_MILLISECONDS);
     }
-    ```
-    
+    ```    
     `npm test` を実行すると、すべてのテストがパスすることを確認できます。
 
 3.  **さらにテストを追加して堅牢にする**
     最後に、「日付の順序が逆でも同じ結果を返すべき」という仕様もテストで保証しましょう。
     先ほどと同様に、テストファイルに`it`ブロックを追記します。
     ```typescript
-    // src/date-calculator.test.ts (さらにitブロックを追記)
-    it('日付の順序が逆でも同じ結果を返すべきである', () => {
-      const date1 = new Date('2023-01-05');
-      const date2 = new Date('2023-01-01');
-      expect(calculateDaysBetweenDates(date1, date2)).toBe(4);
-    });
-    ```
+    // src/date-calculator.test.ts
+    import { calculateDaysBetweenDates } from './date-calculator';
     
+    describe('calculateDaysBetweenDates', () => {
+      it('2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである', () => {
+        // 準備 (Arrange)
+        const date1 = new Date('2023-01-01');
+        const date2 = new Date('2023-01-05');
+    
+        // 実行 (Act)
+        const days = calculateDaysBetweenDates(date1, date2);
+    
+        // 検証 (Assert)
+        expect(days).toBe(4);
+      });
+    
+      it('同じ日付なら0日を返すべきである', () => {
+        const date = new Date('2023-03-15');
+        expect(calculateDaysBetweenDates(date, date)).toBe(0);
+      });
+    
+      // ここを追加
+      it('日付の順序が逆でも同じ結果を返すべきである', () => {
+        const date1 = new Date('2023-01-05');
+        const date2 = new Date('2023-01-01');
+        expect(calculateDaysBetweenDates(date1, date2)).toBe(4);
+      });
+    });
+    ```    
     `Math.abs()` を使ったおかげで、このテストも最初からパスします。こうしてテストを追加していくことで、関数の振る舞いが明確になり、コードがより堅牢になっていくのです。テストコードは **準備(Arrange)・実行(Act)・検証(Assert)** の3ステップで構成すると、意図が明確になります。
 
 ## 第3章: テストの実行と呼吸
@@ -236,7 +268,7 @@ TDDのサイクルの最後は「リファクタリング」です。テスト�
 `npm test` コマンドでテストを実行します。
 
 テストがすべて成功すると、`PASS src/date-calculator.test.ts` のように、全テストが成功したことを示す緑色のメッセージが表示されます。これが、あなたが安心して次の開発に進むための「青信号」です。
-``` bash
+```bash
 npm test
 
 > typescript-test-project@1.0.0 test
@@ -257,7 +289,7 @@ Ran all test suites.
 
 もしテストが一つでも失敗すれば、Jestは `FAIL` というメッセージと共に、どのテストがなぜ失敗したのかを教えてくれます。
 
-```
+```bash
  FAIL  src/date-calculator.test.ts
   ● calculateDaysBetweenDates › 同じ日付なら0日を返すべきである
 
@@ -284,13 +316,41 @@ Ran all test suites.
 TDDの第一歩は、これから実装する機能に対する **失敗するテスト（レッド）** を書くことです。この新しい仕様を、まずはテストコードで表現しましょう。
 
 ```typescript
-// src/date-calculator.test.ts に追記
-it('無効な日付が渡された場合にエラーを投げるべきである', () => {
-  const invalidDate = new Date('not a date');
-  const validDate = new Date('2023-01-01');
+// src/date-calculator.test.ts
+import { calculateDaysBetweenDates } from './date-calculator';
 
-  // toThrow: 関数が特定のエラーを投げることを検証する
-  expect(() => calculateDaysBetweenDates(invalidDate, validDate)).toThrow('Invalid Date object provided.');
+describe('calculateDaysBetweenDates', () => {
+  it('2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである', () => {
+    // 準備 (Arrange)
+    const date1 = new Date('2023-01-01');
+    const date2 = new Date('2023-01-05');
+
+    // 実行 (Act)
+    const days = calculateDaysBetweenDates(date1, date2);
+
+    // 検証 (Assert)
+    expect(days).toBe(4);
+  });
+
+  it('同じ日付なら0日を返すべきである', () => {
+    const date = new Date('2023-03-15');
+    expect(calculateDaysBetweenDates(date, date)).toBe(0);
+  });
+
+  it('日付の順序が逆でも同じ結果を返すべきである', () => {
+    const date1 = new Date('2023-01-05');
+    const date2 = new Date('2023-01-01');
+    expect(calculateDaysBetweenDates(date1, date2)).toBe(4);
+  });
+
+  it('無効な日付が渡された場合にエラーを投げるべきである', () => {
+    const invalidDate = new Date('not a date');
+    const validDate = new Date('2023-01-01');
+
+    // ここを追加
+    // toThrow: 関数が特定のエラーを投げることを検証する
+    expect(() => calculateDaysBetweenDates(invalidDate, validDate)).toThrow('Invalid Date object provided.');
+  });
 });
 ```
 
@@ -317,12 +377,20 @@ it('無効な日付が渡された場合にエラーを投げるべきである'
 次に、このテストを **成功させる（グリーン）** ための最小限のコードを実装します。
 
 ```typescript
-// src/date-calculator.ts (冒頭部分を修正)
+// src/date-calculator.ts
 export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
   if (!date1 || !date2 || isNaN(date1.getTime()) || isNaN(date2.getTime())) {
     throw new Error('Invalid Date object provided.');
   }
-  // ... 以下、実装は同じ
+
+  const ONE_DAY_IN_MILLISECONDS = 1000 * 60 * 60 * 24;
+
+  const utcDate1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
+  const utcDate2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
+
+  const diffMilliseconds = Math.abs(utcDate1 - utcDate2);
+  return Math.floor(diffMilliseconds / ONE_DAY_IN_MILLISECONDS);
+}
 ```
 
 再度 `npm test` を実行すると、今度はすべてのテストがパスするはずです。
@@ -352,10 +420,46 @@ TDDのサイクルは、エッジケースの発見も促します。日付計�
 
 ```typescript
 // src/date-calculator.test.ts
-it('閏年をまたぐ計算が正しく行われるべきである', () => {
-  const date1 = new Date('2024-02-28'); // 2024年は閏年
-  const date2 = new Date('2024-03-01');
-  expect(calculateDaysBetweenDates(date1, date2)).toBe(2);
+import { calculateDaysBetweenDates } from './date-calculator';
+
+describe('calculateDaysBetweenDates', () => {
+  it('2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである', () => {
+    // 準備 (Arrange)
+    const date1 = new Date('2023-01-01');
+    const date2 = new Date('2023-01-05');
+
+    // 実行 (Act)
+    const days = calculateDaysBetweenDates(date1, date2);
+
+    // 検証 (Assert)
+    expect(days).toBe(4);
+  });
+
+  it('同じ日付なら0日を返すべきである', () => {
+    const date = new Date('2023-03-15');
+    expect(calculateDaysBetweenDates(date, date)).toBe(0);
+  });
+
+  it('日付の順序が逆でも同じ結果を返すべきである', () => {
+    const date1 = new Date('2023-01-05');
+    const date2 = new Date('2023-01-01');
+    expect(calculateDaysBetweenDates(date1, date2)).toBe(4);
+  });
+
+  it('無効な日付が渡された場合にエラーを投げるべきである', () => {
+    const invalidDate = new Date('not a date');
+    const validDate = new Date('2023-01-01');
+
+    // toThrow: 関数が特定のエラーを投げることを検証する
+    expect(() => calculateDaysBetweenDates(invalidDate, validDate)).toThrow('Invalid Date object provided.');
+  });
+
+    // ここを追加
+  it('閏年をまたぐ計算が正しく行われるべきである', () => {
+    const date1 = new Date('2024-02-28'); // 2024年は閏年
+    const date2 = new Date('2024-03-01');
+    expect(calculateDaysBetweenDates(date1, date2)).toBe(2);
+  });
 });
 ```
 
@@ -391,7 +495,5 @@ Ran all test suites.
 本記事では、TypeScriptとJestを使ったテストの基本を解説しました。
 
 テストは、書く前から存在していた仕様を確認するものではなく、 **書く過程で仕様を発見し、定義するための対話的な道具** です。テストが一つ、また一つと増えるたびに、あなたのコードベースはより堅牢なものになっていきます。
-
-さらに学びたい方は、外部依存を扱う「モック」や、UIコンポーネントのテスト手法についても調べてみることをお勧めします。
 
 テストを書く習慣を身につけ、自信に満ちた開発ライフを送りましょう！
