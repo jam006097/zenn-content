@@ -75,74 +75,161 @@ EOF
 
 ## 第2章: はじめてのテストを書いてみる
 
-テスト対象の関数を作り、その振る舞いを定義するテストを書いていきましょう。題材は「2つの日付間の日数を計算する関数」です。
+テスト駆動開発（TDD）のリズム「レッド→グリーン→リファクタリング」に従って、最初のテストを書いていきましょう。題材は「2つの日付間の日数を計算する関数」です。
 
-### 2.1 テスト対象の関数
+### 2.1 [レッド] 最初のテストを書き、そして失敗させる
 
-`src/date-calculator.ts` を作成し、
-``` bash
-vim src/date-calculator.ts
-```
+TDDのサイクルは、まず **「失敗するテスト（レッド）」** を書くことから始まります。
 
-以下の関数を記述します。
-```typescript
-// src/date-calculator.ts
-export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
-  // NOTE: この関数はシンプルさのため、Dateオブジェクトを直接扱っています。
-  // より複雑な日付操作が必要なドメインでは、date-fnsのようなライブラリで抽象化する設計も有効です。
+1.  **テストファイルの準備**
+    まず、テストコードを置くためのファイルを作成します。`src` ディレクトリがなければ作成してください。
 
-  const ONE_DAY_IN_MILLISECONDS = 1000 * 60 * 60 * 24;
+    ```bash
+    mkdir -p src
+    # テストファイルを作成（まだ実装ファイルは作らない）
+    touch src/date-calculator.test.ts
+    ```
 
-  const utcDate1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
-  const utcDate2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
+2.  **テストコードの記述**
+    次に、`src/date-calculator.test.ts` に、これから作る `calculateDaysBetweenDates` 関数の振る舞いを定義するテストを書きます。まだ関数そのものは存在しないことに注意してください。
 
-  const diffMilliseconds = Math.abs(utcDate1 - utcDate2);
-  return Math.floor(diffMilliseconds / ONE_DAY_IN_MILLISECONDS);
-}
-```
+    ```typescript
+    // src/date-calculator.test.ts
+    // まだ存在しないファイルからimportしようとします
+    import { calculateDaysBetweenDates } from './date-calculator';
 
-### 2.2 テストが仕様を言語化する
+    describe('calculateDaysBetweenDates', () => {
+      it('2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである', () => {
+        // 準備 (Arrange)
+        const date1 = new Date('2023-01-01');
+        const date2 = new Date('2023-01-05');
 
-これから書くテストコードが、この `calculateDaysBetweenDates` 関数の **「動く仕様書」** となります。テストをパスするコードだけが、私達が意図した仕様を満たしていると言えるのです。
+        // 実行 (Act)
+        const days = calculateDaysBetweenDates(date1, date2);
 
-`src/date-calculator.test.ts` を作成し、
-``` bash
-vim src/date-calculator.test.ts
-```
+        // 検証 (Assert)
+        expect(days).toBe(4);
+      });
+    });
+    ```
 
-最初のテストを書いてみましょう。
-```typescript
-// src/date-calculator.test.ts
-import { calculateDaysBetweenDates } from './date-calculator';
+3.  **テストの失敗を確認**
+    この状態でテストを実行すると、`date-calculator.ts` が存在しないため、当然エラーになります。
 
-describe('calculateDaysBetweenDates', () => {
-  it('2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである', () => {
-    // 準備 (Arrange)
-    const date1 = new Date('2023-01-01');
-    const date2 = new Date('2023-01-05');
+    ```bash
+    npm test
+    ```
     
-    // 実行 (Act)
-    const days = calculateDaysBetweenDates(date1, date2);
+    ```bash
+     FAIL  src/date-calculator.test.ts
+      ● Test suite failed to run
 
-    // 検証 (Assert)
-    expect(days).toBe(4);
-  });
+        Cannot find module './date-calculator' from 'src/date-calculator.test.ts'
+    ```
+    おめでとうございます！これがTDDにおける最初の「赤信号（レッド）」です。私たちは今、実装すべき目標をコードで明確に定義しました。
 
-  // 仕様をさらに明確にするテストケースを追加
-  it('同じ日付なら0日を返すべきである', () => {
-    const date = new Date('2023-03-15');
-    expect(calculateDaysBetweenDates(date, date)).toBe(0);
-  });
+### 2.2 [グリーン] テストをパスさせる
 
-  it('日付の順序が逆でも同じ結果を返すべきである', () => {
-    const date1 = new Date('2023-01-05');
-    const date2 = new Date('2023-01-01');
-    expect(calculateDaysBetweenDates(date1, date2)).toBe(4);
-  });
-});
-```
+赤信号を青信号（グリーン）に変えましょう。テストをパスさせるための、最もシンプルな実装を追加します。
 
-テストコードは **準備(Arrange)・実行(Act)・検証(Assert)** の3ステップで構成すると、意図が明確になります。
+1.  **実装ファイルの作成と最小限の実装**
+    エラーを解決するため、`src/date-calculator.ts` を作成し、テストをパスするためだけのコードを書きます。
+
+    ```bash
+    touch src/date-calculator.ts
+    ```
+
+    ```typescript
+    // src/date-calculator.ts
+    // とにかくテストをパスさせるためだけに「4」を返す
+    export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
+      return 4;
+    }
+    ```
+
+2.  **テストの成功を確認**
+    再度テストを実行すると、今度は成功するはずです。
+
+    ```bash
+    npm test
+
+    > typescript-test-project@1.0.0 test
+    > jest
+
+     PASS  src/date-calculator.test.ts
+      calculateDaysBetweenDates
+        ✓ 2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである (2 ms)
+
+    Test Suites: 1 passed, 1 total
+    Tests:       1 passed, 1 total
+    Snapshots:   0 total
+    Time:        0.315 s
+    ```
+    これで「グリーン」の状態になりました。しかし、現在の実装は明らかに不完全です。
+
+### 2.3 [リファクタリング] 仕様を追加し、実装を改善する
+
+TDDのサイクルの最後は「リファクタリング」です。テストを追加して隠れた要求をあぶり出し、コードをより汎用的に、より綺麗にしていきます。
+
+1.  **新しいテストを追加して、再び[レッド]へ**
+    現在の実装の問題点を暴く新しいテストを追加します。「同じ日付なら0を返すはずだ」という仕様をテストコードで表現しましょう。
+    `src/date-calculator.test.ts`の`describe`ブロック内に、以下の`it`ブロックを追記します。
+    ```typescript
+    // src/date-calculator.test.ts (itブロックを追記)
+    it('同じ日付なら0日を返すべきである', () => {
+      const date = new Date('2023-03-15');
+      expect(calculateDaysBetweenDates(date, date)).toBe(0);
+    });
+    ```
+    
+    このテストは現在の `return 4;` という実装では失敗し、再び「レッド」の状態に戻ります。
+
+    ```bash
+     FAIL  src/date-calculator.test.ts
+      calculateDaysBetweenDates
+        ✓ 2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである (2 ms)
+      ● calculateDaysBetweenDates › 同じ日付なら0日を返すべきである
+
+        expect(received).toBe(expected) // Object.is equality
+
+        Expected: 0
+        Received: 4
+    ```
+
+2.  **実装を改善して、再び[グリーン]へ**
+    両方のテストをパスさせるために、ハードコードされた実装を汎用的なロジックに修正（リファクタリング）します。
+
+    ```typescript
+    // src/date-calculator.ts (全体を修正)
+    export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
+      // NOTE: この関数はシンプルさのため、Dateオブジェクトを直接扱っています。
+      // より複雑な日付操作が必要なドメインでは、date-fnsのようなライブラリで抽象化する設計も有効です。
+
+      const ONE_DAY_IN_MILLISECONDS = 1000 * 60 * 60 * 24;
+
+      const utcDate1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
+      const utcDate2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
+
+      const diffMilliseconds = Math.abs(utcDate1 - utcDate2);
+      return Math.floor(diffMilliseconds / ONE_DAY_IN_MILLISECONDS);
+    }
+    ```
+    
+    `npm test` を実行すると、すべてのテストがパスすることを確認できます。
+
+3.  **さらにテストを追加して堅牢にする**
+    最後に、「日付の順序が逆でも同じ結果を返すべき」という仕様もテストで保証しましょう。
+    先ほどと同様に、テストファイルに`it`ブロックを追記します。
+    ```typescript
+    // src/date-calculator.test.ts (さらにitブロックを追記)
+    it('日付の順序が逆でも同じ結果を返すべきである', () => {
+      const date1 = new Date('2023-01-05');
+      const date2 = new Date('2023-01-01');
+      expect(calculateDaysBetweenDates(date1, date2)).toBe(4);
+    });
+    ```
+    
+    `Math.abs()` を使ったおかげで、このテストも最初からパスします。こうしてテストを追加していくことで、関数の振る舞いが明確になり、コードがより堅牢になっていくのです。テストコードは **準備(Arrange)・実行(Act)・検証(Assert)** の3ステップで構成すると、意図が明確になります。
 
 ## 第3章: テストの実行と呼吸
 
