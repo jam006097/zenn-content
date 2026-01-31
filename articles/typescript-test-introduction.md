@@ -221,12 +221,18 @@ TDDのサイクルの最後は「リファクタリング」です。テスト�
     // src/date-calculator.ts
     export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
     
+      // 1日をミリ秒に変換した定数
       const ONE_DAY_IN_MILLISECONDS = 1000 * 60 * 60 * 24;
     
+      // タイムゾーンの問題を避けるため、両方の日付をUTC（協定世界時）に変換し、
+      // 時刻部分を無視して日付のみを比較対象にする
       const utcDate1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
       const utcDate2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
     
+      // 2つの日付の差をミリ秒単位で計算（Math.absで常に正の値にする）
       const diffMilliseconds = Math.abs(utcDate1 - utcDate2);
+      
+      // ミリ秒の差を日数に変換し、小数点以下を切り捨てて返す
       return Math.floor(diffMilliseconds / ONE_DAY_IN_MILLISECONDS);
     }
     ```    
@@ -349,21 +355,28 @@ describe('calculateDaysBetweenDates', () => {
   });
 
   it('同じ日付なら0日を返すべきである', () => {
+    // 準備 (Arrange)
     const date = new Date('2023-03-15');
-    expect(calculateDaysBetweenDates(date, date)).toBe(0);
+    
+    // 実行 (Act)
+    const days = calculateDaysBetweenDates(date, date);
+
+    // 検証 (Assert)
+    expect(days).toBe(0);
   });
 
-        it('日付の順序が逆でも同じ結果を返すべきである', () => {
-          // 準備 (Arrange)
-          const date1 = new Date('2023-01-05');
-          const date2 = new Date('2023-01-01');
-          
-          // 実行 (Act)
-          const days = calculateDaysBetweenDates(date1, date2);
-  
-          // 検証 (Assert)
-          expect(days).toBe(4);
-        });
+  it('日付の順序が逆でも同じ結果を返すべきである', () => {
+    // 準備 (Arrange)
+    const date1 = new Date('2023-01-05');
+    const date2 = new Date('2023-01-01');
+    
+    // 実行 (Act)
+    const days = calculateDaysBetweenDates(date1, date2);
+
+    // 検証 (Assert)
+    expect(days).toBe(4);
+  });
+
   it('無効な日付が渡された場合にエラーを投げるべきである', () => {
     // 準備 (Arrange)
     const invalidDate = new Date('not a date');
@@ -404,16 +417,23 @@ describe('calculateDaysBetweenDates', () => {
 ```typescript
 // src/date-calculator.ts
 export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
+  // ガード節: 不正なDateオブジェクトが渡された場合はエラーを投げる
   if (!date1 || !date2 || isNaN(date1.getTime()) || isNaN(date2.getTime())) {
     throw new Error('Invalid Date object provided.');
   }
 
+  // 1日をミリ秒に変換した定数
   const ONE_DAY_IN_MILLISECONDS = 1000 * 60 * 60 * 24;
 
+  // タイムゾーンの問題を避けるため、両方の日付をUTC（協定世界時）に変換し、
+  // 時刻部分を無視して日付のみを比較対象にする
   const utcDate1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
   const utcDate2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
 
+  // 2つの日付の差をミリ秒単位で計算（Math.absで常に正の値にする）
   const diffMilliseconds = Math.abs(utcDate1 - utcDate2);
+  
+  // ミリ秒の差を日数に変換し、小数点以下を切り捨てて返す
   return Math.floor(diffMilliseconds / ONE_DAY_IN_MILLISECONDS);
 }
 ```
@@ -461,21 +481,28 @@ describe('calculateDaysBetweenDates', () => {
   });
 
   it('同じ日付なら0日を返すべきである', () => {
+    // 準備 (Arrange)
     const date = new Date('2023-03-15');
-    expect(calculateDaysBetweenDates(date, date)).toBe(0);
+    
+    // 実行 (Act)
+    const days = calculateDaysBetweenDates(date, date);
+
+    // 検証 (Assert)
+    expect(days).toBe(0);
   });
 
-        it('日付の順序が逆でも同じ結果を返すべきである', () => {
-          // 準備 (Arrange)
-          const date1 = new Date('2023-01-05');
-          const date2 = new Date('2023-01-01');
-          
-          // 実行 (Act)
-          const days = calculateDaysBetweenDates(date1, date2);
-  
-          // 検証 (Assert)
-          expect(days).toBe(4);
-        });
+  it('日付の順序が逆でも同じ結果を返すべきである', () => {
+    // 準備 (Arrange)
+    const date1 = new Date('2023-01-05');
+    const date2 = new Date('2023-01-01');
+    
+    // 実行 (Act)
+    const days = calculateDaysBetweenDates(date1, date2);
+
+    // 検証 (Assert)
+    expect(days).toBe(4);
+  });
+
   it('無効な日付が渡された場合にエラーを投げるべきである', () => {
     // 準備 (Arrange)
     const invalidDate = new Date('not a date');
