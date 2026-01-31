@@ -79,8 +79,12 @@ EOF
 
 ### 2.1 テスト対象の関数
 
-`src/date-calculator.ts` を作成し、以下の関数を記述します。
+`src/date-calculator.ts` を作成し、
+``` bash
+vim src/date-calculator.ts
+```
 
+以下の関数を記述します。
 ```typescript
 // src/date-calculator.ts
 export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
@@ -101,8 +105,12 @@ export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
 
 これから書くテストコードが、この `calculateDaysBetweenDates` 関数の **「動く仕様書」** となります。テストをパスするコードだけが、私達が意図した仕様を満たしていると言えるのです。
 
-`src/date-calculator.test.ts` を作成し、最初のテストを書いてみましょう。
+`src/date-calculator.test.ts` を作成し、
+``` bash
+vim src/date-calculator.test.ts
+```
 
+最初のテストを書いてみましょう。
 ```typescript
 // src/date-calculator.test.ts
 import { calculateDaysBetweenDates } from './date-calculator';
@@ -141,6 +149,24 @@ describe('calculateDaysBetweenDates', () => {
 `npm test` コマンドでテストを実行します。
 
 テストがすべて成功すると、`PASS src/date-calculator.test.ts` のように、全テストが成功したことを示す緑色のメッセージが表示されます。これが、あなたが安心して次の開発に進むための「青信号」です。
+``` bash
+npm test
+
+> typescript-test-project@1.0.0 test
+> jest
+
+ PASS  src/date-calculator.test.ts
+  calculateDaysBetweenDates
+    ✓ 2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである (1 ms)
+    ✓ 同じ日付なら0日を返すべきである
+    ✓ 日付の順序が逆でも同じ結果を返すべきである
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+Snapshots:   0 total
+Time:        0.327 s
+Ran all test suites.
+```
 
 もしテストが一つでも失敗すれば、Jestは `FAIL` というメッセージと共に、どのテストがなぜ失敗したのかを教えてくれます。
 
