@@ -323,7 +323,7 @@ Ran all test suites.
       at src/date-calculator.test.ts:21:20
 ```
 
-`Expected` (期待した値) と `Received` (実際の値) の違いが明確に示されるため、問題の特定が容易です。この「赤信号」があるからこそ、私たちはリファクタリングの際にも安心してコードの海を渡っていけるのです。
+`Expected` (期待した値) と `Received` (実際の値) の違いが明確に示されるため、問題の特定が容易です。この「赤信号」があるからこそ、私たちはリファクタリングの際にも安心してコード触ることができます。
 
 ## 第4章: テストが設計を変える瞬間
 
@@ -377,6 +377,7 @@ describe('calculateDaysBetweenDates', () => {
     expect(days).toBe(4);
   });
 
+  // ここを追加
   it('無効な日付が渡された場合にエラーを投げるべきである', () => {
     // 準備 (Arrange)
     const invalidDate = new Date('not a date');
@@ -517,6 +518,7 @@ describe('calculateDaysBetweenDates', () => {
     expect(action).toThrow('Invalid Date object provided.');
   });
 
+  // ここを追加
   it('閏年をまたぐ計算が正しく行われるべきである', () => {
     // 準備 (Arrange)
     const date1 = new Date('2024-02-28'); // 2024年は閏年
@@ -564,4 +566,4 @@ Ran all test suites.
 
 テストは、書く前から存在していた仕様を確認するものではなく、 **書く過程で仕様を発見し、定義するための対話的な道具** です。テストが一つ、また一つと増えるたびに、あなたのコードベースはより堅牢なものになっていきます。
 
-テストを書く習慣を身につけ、自信に満ちた開発ライフを送りましょう！
+自分のためにテストを書く習慣を身につけ、将来の自分への投資にしましょう。
