@@ -186,27 +186,18 @@ Ran all test suites.
 
 ## 第4章: テストが設計を変える瞬間
 
-テストを書くことは、受動的な確認作業ではありません。 **テストを書いたことで、「この関数は何を保証すべきか」が初めて言語化され、より良い設計へと導かれる**、能動的な設計活動なのです。
+テストを書くことは、単なる確認作業ではありません。それはコードの振る舞いを定義し、設計を導くための能動的な活動です。特にテスト駆動開発（TDD）では、「失敗するテストを先に書く」というサイクルを通じて、より堅牢で保守しやすいコードを生み出します。この章では、TDDのリズム（レッド→グリーン→リファクタリング）を体験しながら、テストが設計をどう変えるかを見ていきましょう。
 
-### 4.1 エラー処理という仕様の決定
+### 4.1 [レッド→グリーン] テストで仕様を定義する：エラー処理
 
-もし、無効な日付が渡されたらどうなるでしょうか？この問いに答えることで、私たちは関数の仕様を決定します。ここでは「不正な入力を受け付けない」ことを明確にするため、エラーを投げる設計を選びました。
+まず、仕様を明確にするための問いを立てます。「もし、無効な日付が渡されたらどうなるべきか？」現在の関数はこのケースを考慮していません。私たちは「不正な入力を受け付けず、エラーを投げる」という仕様をここで決定します。
 
-まず、`calculateDaysBetweenDates` 関数にバリデーションを追加します。
+#### 1. [レッド] 失敗するテストを先に書く
 
-```typescript
-// src/date-calculator.ts (冒頭部分)
-export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
-  if (!date1 || !date2 || isNaN(date1.getTime()) || isNaN(date2.getTime())) {
-    throw new Error('Invalid Date object provided.');
-  }
-  // ... 以下、実装は同じ
-```
-
-そして、この新しい「仕様」をテストコードで表現します。
+TDDの第一歩は、これから実装する機能に対する **失敗するテスト（レッド）** を書くことです。この新しい仕様を、まずはテストコードで表現しましょう。
 
 ```typescript
-// src/date-calculator.test.ts
+// src/date-calculator.test.ts に追記
 it('無効な日付が渡された場合にエラーを投げるべきである', () => {
   const invalidDate = new Date('not a date');
   const validDate = new Date('2023-01-01');
@@ -216,15 +207,40 @@ it('無効な日付が渡された場合にエラーを投げるべきである'
 });
 ```
 
-`toThrow` マッチャーにより、「エラーを投げること」がこの関数の正しい振る舞いである、と定義できました。
+この時点で実装はまだないので、`npm test` を実行すると、期待通りテストは失敗します。
 
-テストコードを実行した結果は以下です。
-``` 
-npm test
+```bash
+ FAIL  src/date-calculator.test.ts
+  calculateDaysBetweenDates
+    ✓ 2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである (1 ms)
+    ✓ 同じ日付なら0日を返すべきである
+    ✓ 日付の順序が逆でも同じ結果を返すべきである
+  ● calculateDaysBetweenDates › 無効な日付が渡された場合にエラーを投げるべきである
 
-> typescript-test-project@1.0.0 test
-> jest
+    expect(received).toThrow(expected)
 
+    Expected message: "Invalid Date object provided."
+    Received function did not throw
+```
+
+これが「レッド」の状態です。次に、このテストをパスさせましょう。
+
+#### 2. [グリーン] テストをパスさせる最小限の実装を書く
+
+次に、このテストを **成功させる（グリーン）** ための最小限のコードを実装します。
+
+```typescript
+// src/date-calculator.ts (冒頭部分を修正)
+export function calculateDaysBetweenDates(date1: Date, date2: Date): number {
+  if (!date1 || !date2 || isNaN(date1.getTime()) || isNaN(date2.getTime())) {
+    throw new Error('Invalid Date object provided.');
+  }
+  // ... 以下、実装は同じ
+```
+
+再度 `npm test` を実行すると、今度はすべてのテストがパスするはずです。
+
+```bash
  PASS  src/date-calculator.test.ts
   calculateDaysBetweenDates
     ✓ 2023年1月1日と2023年1月5日の間の日数を正しく計算すべきである (2 ms)
@@ -239,9 +255,13 @@ Time:        0.295 s, estimated 1 s
 Ran all test suites.
 ```
 
-### 4.2 隠れた仕様の発見：閏年
+これで、「エラーを投げること」がこの関数の正しい振る舞いであると、コードで定義することができました。この「レッド→グリーン」の短いサイクルが、TDDの基本的なリズムです。
 
-日付計算には「閏年」という、見落としがちな仕様が常に存在します。これもテストによって明確にしましょう。
+### 4.2 テストが隠れた仕様を発見させる：閏年
+
+TDDのサイクルは、エッジケースの発見も促します。日付計算には「閏年」という、見落としがちな仕様が常に存在します。
+
+この仕様を保証するため、新たなテストケースを追加します。
 
 ```typescript
 // src/date-calculator.test.ts
@@ -252,10 +272,13 @@ it('閏年をまたぐ計算が正しく行われるべきである', () => {
 });
 ```
 
-このテストを書いたことで、私たちの関数が閏年を正しく扱えることが保証されました。
+私たちの `calculateDaysBetweenDates` 関数は幸いにも最初からこのテストをパスしますが、もしパスしなかった場合、先ほどと同じようにTDDのサイクル（レッド→グリーン）に従って実装を修正することになります。
 
-テストコードを実行した結果は以下です。
-``` 
+このように **テストを書く行為そのものが、開発者に「どのようなケースを考慮すべきか？」を問いかけ、隠れた仕様をあぶり出す** のです。
+
+すべてのテストがパスすることを確認しましょう。
+
+```bash
 npm test
 
 > typescript-test-project@1.0.0 test
