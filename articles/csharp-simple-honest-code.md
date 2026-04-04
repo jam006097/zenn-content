@@ -3,7 +3,7 @@ title: "嘘をつかないコードを書く：シンプルなコードのほう
 emoji: "📖"
 type: "tech"
 topics: ["csharp", "dotnet", "design", "clean-code", "testing"]
-published: false
+published: true
 ---
 
 ## はじめに
@@ -23,36 +23,65 @@ published: false
 
 ---
 
-## 「賢いコード」が生む苦しみ
+## 「嘘をつくコード」とは？
 
-経験を積んだプログラマーほど、陥りやすいワナがあります。
+「嘘をつくコード」とは、メソッド名や見た目と、実際の中身がズレているコードのことです。
+
+例えば、次のメソッドを見てください。
 
 ```csharp
-// ワナその1：リフレクションで「汎用化」した例
-public object GetValue(object obj, string propertyName)
+// 嘘をつくコード
+public User GetActiveUser(int userId)
 {
-    return obj.GetType()
-               .GetProperty(propertyName)
-               ?.GetValue(obj);
+    var user = _repository.Find(userId);
+    user.LastLoginAt = DateTime.Now; // ← 取得しているのに、状態も変えている！
+    _repository.Save(user);
+    return user;
 }
 ```
 
-「プロパティ名を文字列で渡せば何でも取れる！汎用的だ！」と思いたくなりますが、これには大きな問題があります。
+`Get` という名前がついているので「ユーザーを取得するメソッドだ」と思って呼び出したら、実はDBの更新まで走っていた。これが「嘘をつくコード」です。
 
-- `propertyName` のスペルを間違えても**コンパイルエラーにならない**
-- どこから呼ばれているか**IDEで追跡できない**
-- テストを書いても**何をテストしているのかわかりにくい**
+呼び出した側には何も知らされず、副作用が起きている。この手のコードは、デバッグ中に「なぜか値が変わっている」という謎バグを生み出します。
 
-この手の「賢い書き方」は、書いた本人にしか読めないコードを生み出します。そしてその本人も、3ヶ月後には「自分で書いたのに読めない」という状態になります。
+### コマンドクエリ分離（CQS）の原則
+
+この問題を防ぐシンプルな原則があります。**コマンドクエリ分離（Command Query Separation）** です。
+
+- **クエリ（Query）**：値を返す。状態を変えない。
+- **コマンド（Command）**：状態を変える。値を返さない。
+
+この2つを混ぜないだけで、コードの「嘘」が大幅に減ります。
+
+```csharp
+// クエリ：値を返すだけ、状態を変えない
+public User GetUser(int userId)
+{
+    return _repository.Find(userId);
+}
+
+// コマンド：状態を変えるだけ、値を返さない
+public void RecordLogin(int userId)
+{
+    var user = _repository.Find(userId);
+    user.LastLoginAt = DateTime.Now;
+    _repository.Save(user);
+}
+```
+
+呼び出す側は「取得したいなら `GetUser`」「ログインを記録したいなら `RecordLogin`」と、名前を見るだけで意図がわかります。メソッド名が嘘をつかなくなります。
 
 ---
 
-## シンプルなコードは「嘘をつかない」
+## テストコードが「動く説明書」になる
 
-では、良いコードとはどんなコードでしょうか。
+シンプルなコードとセットで効果を発揮するのが、テストコードです。
+
+テストコードは品質のためだけにあるのではありません。「このメソッドはこう使うもので、こういう結果を返す」という**使い方の例**を実行可能な形で残せます。
+
+次のシンプルな割引計算メソッドを例にしてみましょう。
 
 ```csharp
-// シンプルな例：ユーザーに割引を適用する
 public decimal ApplyDiscount(decimal price, int discountPercent)
 {
     if (discountPercent < 0 || discountPercent > 100)
@@ -62,17 +91,7 @@ public decimal ApplyDiscount(decimal price, int discountPercent)
 }
 ```
 
-このコードは短く、やっていることが一目でわかります。メソッド名を見れば「割引を適用する」とわかり、引数を見れば「価格と割引率を渡す」とわかります。
-
-**初めて読んだ人が理解できるコード**、それが「嘘をつかないコード」です。
-
----
-
-## テストコードが「動く説明書」になる
-
-シンプルなコードとセットで効果を発揮するのが、テストコードです。
-
-テストコードは品質のためだけにあるのではありません。「このメソッドはこう使うもので、こういう結果を返す」という**使い方の例**を実行可能な形で残せます。
+このメソッドに対してテストを書くとこうなります。
 
 ```csharp
 public class DiscountServiceTests
@@ -110,28 +129,45 @@ public class DiscountServiceTests
 
 ## やめてほしい「後でつらくなる書き方」
 
-### メタプログラミング・リフレクション
+### リフレクションで画面要素を動的に取得する
 
-冒頭で紹介したリフレクションの例がまさにこれです。「汎用化できる」という魅力がありますが、コードの流れを追えなくなります。IDEの「定義へ移動」「参照を探す」が効かなくなり、リファクタリングが地獄になります。
+「フォームのコントロールを汎用的に設定したい」という気持ちはわかります。でも、リフレクションを使った途端に、コードは追跡不能になります。
 
 ```csharp
-// やめよう：何が呼ばれるかコンパイル時にわからない
-var method = typeof(OrderService).GetMethod("Process" + orderType);
-method?.Invoke(service, new object[] { order });
-
-// こうしよう：素直に書く
-if (orderType == "Normal")
-    service.ProcessNormalOrder(order);
-else if (orderType == "Express")
-    service.ProcessExpressOrder(order);
+// やめよう：リフレクションで画面要素を動的に操作
+public void SetFieldValues(Form form, Dictionary<string, string> values)
+{
+    foreach (var kvp in values)
+    {
+        var control = form.Controls.Find(kvp.Key, true).FirstOrDefault();
+        var prop = control?.GetType().GetProperty("Text");
+        prop?.SetValue(control, kvp.Value);
+    }
+}
 ```
 
-下の書き方は「冗長」に見えるかもしれませんが、**何が起きるかコードを読めばわかる**というのは大きな価値です。
+このコードには次の問題があります。
+
+- コントロール名を**文字列で指定**するため、タイポしてもコンパイルエラーにならない
+- IDEの「参照を探す」が機能しないため、**どこから呼ばれているか追えない**
+- テストを書いても何をテストしているかわかりにくい
+
+```csharp
+// こうしよう：冗長でも素直に書く
+public void SetFieldValues(OrderForm form, OrderData data)
+{
+    form.NameTextBox.Text    = data.CustomerName;
+    form.EmailTextBox.Text   = data.Email;
+    form.AddressTextBox.Text = data.Address;
+}
+```
+
+行数は増えますが、何をしているかは一目瞭然です。フィールドを追加・削除するときも、変更箇所がコンパイルエラーで明示されます。「冗長」に見えるこの書き方こそが、後で助かるコードです。
 
 ### 「賢い」一行コード
 
 ```csharp
-// 読めなくはないけど、一瞬止まる
+// 一瞬止まる書き方
 var result = items?.Where(x => x?.IsActive == true)?.Select(x => x!.Name)?.ToList() ?? new List<string>();
 
 // 素直に書くとこうなる
@@ -148,29 +184,17 @@ return items
 
 ---
 
-## シンプルなコードの判断基準
-
-自分が書いたコードを見直すとき、こう自問してみてください。
-
-**「3年目のプログラマーが初めて読んで、5分で理解できるか？」**
-
-この基準は実はかなり高い水準です。ここでいう「3年目」とは「普通のC#は書けるが、特殊な言語機能やマジックナンバーは知らないかもしれない」くらいのイメージです。
-
-もし「わかってもらうには説明が必要」なコードなら、それはコード自体がわかりにくいサインです。コメントを追加するのではなく、**コードそのものをわかりやすく書き直す**ことを検討しましょう。
-
----
-
 ## まとめ
 
 シンプルなコードを書くということは、手を抜くことではありません。「読む人」のことを考えて設計することです。
 
-- **初めて見た人が理解できるコードを書く**
+- **メソッド名と中身を一致させる**（嘘をつかない）
+- **コマンドとクエリを分離する**（副作用を隠さない）
 - **テストコードで「使い方と動作」を伝える**
 - **リフレクションやメタプログラミングは後でつらくなるから使わない**
-- **一行に詰め込みすぎず、素直に書く**
 
-「賢いコード」は書いた瞬間だけ気持ちいいですが、「シンプルなコード」はチームを長期間助け続けます。
+「賢いコード」は書いた瞬間だけ気持ちいいですが、「シンプルなコード」は長期的に自分を助けます。
 
-あなたが書く次のコードが、未来の誰か（自分かもしれない）にとって「読みやすくて助かった」と思ってもらえるものになることを願っています。
+あなたが書く次のコードが、未来の誰か（たぶん自分!）にとって「読みやすくて助かった」と思ってもらえるものになることを願っています。
 
 では、また！
