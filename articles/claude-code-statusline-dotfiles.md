@@ -66,6 +66,7 @@ Claude Code は状態が更新されるたびにこのコマンドを実行し�
 
 以下のスクリプトを `~/.claude/statusline.sh` として保存します。
 
+:::details statusline.sh 全文（クリックで展開）
 ```bash
 #!/bin/bash
 set -f
@@ -394,6 +395,7 @@ printf "%b" "$line1"
 
 exit 0
 ```
+:::
 
 ## スクリプトの解説
 
@@ -483,17 +485,91 @@ effort=$(jq -r '.effortLevel // "default"' "$HOME/.claude/settings.json" 2>/dev/
 
 ### レートリミットの取得（stdin → API フォールバック）
 
-レートリミットは最初に stdin の JSON から取得を試みます。
+表示される3行はそれぞれ異なるソースと計算方法を持っています。
+
+```
+current ●●●●○○○○○○  49% ⟳ 1:10am
+weekly  ●○○○○○○○○○  17% ⟳ may 4, 2:00am
+extra   ○○○○○○○○○○ $0.00/$20.00 ⟳ jun 1
+```
+
+#### データの取得元：stdin 優先、API フォールバック
+
+レートリミットはまず stdin の JSON から取得を試みます。
 
 ```bash
 stdin_five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 ```
 
-含まれていない場合は Anthropic API（`/api/oauth/usage`）を叩きます。認証トークンは macOS キーチェーン → `~/.claude/.credentials.json` → 環境変数 `CLAUDE_CODE_OAUTH_TOKEN` の順で探します。
+`.rate_limits.five_hour.used_percentage` が存在すれば stdin から使います。存在しない場合は Anthropic API（`/api/oauth/usage`）を呼び出します。認証トークンは macOS キーチェーン → `~/.claude/.credentials.json` → 環境変数 `CLAUDE_CODE_OAUTH_TOKEN` の順で探します。
 
 API の結果は `/tmp/claude/statusline-usage-cache.json` に **60 秒間キャッシュ**します。ステータスバーは頻繁に更新されるため、毎回 API を呼ぶと表示が遅くなるためです。
 
-Extra Usage（従量課金）が有効な場合は3行目に `extra` 行も追加されます。
+#### current（5時間ウィンドウ）
+
+```
+current ●●●●○○○○○○  49% ⟳ 1:10am
+```
+
+`49%` は5時間ウィンドウの使用率です。stdin からは `.rate_limits.five_hour.used_percentage`、API からは `.five_hour.utilization` で取得します。小数で渡されるため `printf "%.0f"` や `awk` で整数に丸めます。
+
+`⟳ 1:10am` はリセット時刻です。`.rate_limits.five_hour.resets_at`（ISO 8601 形式）を `iso_to_epoch` で Unix タイムスタンプに変換し、`format_epoch_time "$epoch" "time"` で時刻のみの表示（`1:10am`）に整形しています。
+
+```bash
+five_hour_pct=$(printf "%.0f" "$stdin_five_pct")
+five_hour_reset_epoch=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+
+five_hour_reset=$(format_epoch_time "$five_hour_reset_epoch" "time")  # → "1:10am"
+five_hour_bar=$(build_bar "$five_hour_pct" "$bar_width")
+five_hour_pct_fmt=$(printf "%3d" "$five_hour_pct")                   # 右揃え3桁
+
+rate_lines+="${white}current${reset} ${five_hour_bar} ${five_hour_pct_color}${five_hour_pct_fmt}%${reset}"
+[ -n "$five_hour_reset" ] && rate_lines+=" ${dim}⟳${reset} ${white}${five_hour_reset}${reset}"
+```
+
+#### weekly（7日間ウィンドウ）
+
+```
+weekly  ●○○○○○○○○○  17% ⟳ may 4, 2:00am
+```
+
+`17%` は7日間ウィンドウの使用率です。stdin からは `.rate_limits.seven_day.used_percentage`、API からは `.seven_day.utilization` で取得します。
+
+`⟳ may 4, 2:00am` はリセット日時です。current との違いは `format_epoch_time` に渡すスタイルが `"datetime"` になる点で、日付＋時刻（`may 4, 2:00am`）形式で表示されます。current が時刻のみなのは、5時間以内にリセットされるので日付が不要なためです。
+
+```bash
+seven_day_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' | awk '{printf "%.0f", $1}')
+seven_day_reset_epoch=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+
+seven_day_reset=$(format_epoch_time "$seven_day_reset_epoch" "datetime")  # → "may 4, 2:00am"
+```
+
+#### extra（従量課金）
+
+```
+extra   ○○○○○○○○○○ $0.00/$20.00 ⟳ jun 1
+```
+
+Extra Usage は Claude Code Max の使用量が上限に達したあとに従量課金で使い続けられる機能です。`extra_usage.is_enabled` が `true` のときだけ表示されます。
+
+金額表示の `$0.00/$20.00` は API レスポンスの `used_credits` と `monthly_limit` をそれぞれ100で割ってドルに換算しています。**API はセント単位で返すため、100で割らないと金額が100倍になります。**
+
+`⟳ jun 1` のリセット日は API に含まれません。毎月1日リセットなので、`date` コマンドで翌月1日を計算しています。macOS と Linux で書式が異なるため両方を試みます。
+
+```bash
+extra_enabled=$(echo "$usage_data" | jq -r '.extra_usage.is_enabled // false')
+
+if [ "$extra_enabled" = "true" ]; then
+    extra_pct=$(echo "$usage_data" | jq -r '.extra_usage.utilization // 0' | awk '{printf "%.0f", $1}')
+    extra_used=$(echo "$usage_data" | jq -r '.extra_usage.used_credits // 0' | awk '{printf "%.2f", $1/100}')  # セント→ドル
+    extra_limit=$(echo "$usage_data" | jq -r '.extra_usage.monthly_limit // 0' | awk '{printf "%.2f", $1/100}')
+
+    # 翌月1日を計算（macOS: date -v、Linux: date -d）
+    extra_reset=$(date -v+1m -v1d +"%b %-d" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    [ -z "$extra_reset" ] && \
+        extra_reset=$(date -d "$(date +%Y-%m-01) +1 month" +"%b %-d" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+fi
+```
 
 ### 出力の組み立て
 
