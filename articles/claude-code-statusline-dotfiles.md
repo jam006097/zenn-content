@@ -13,17 +13,11 @@ published: true
 
 ## はじめに
 
-Claude Code を使っていると、こんな疑問が浮かびませんか？
+Claude Code のステータスバーは、シェルスクリプトの標準出力をそのまま表示する仕組みです。`settings.json` に1行設定を追加するだけで有効になり、表示内容は完全に自由に組み立てられます。
 
-- 「今どのくらいコンテキストを使っている？」
-- 「レートリミットはあとどれくらい残っている？」
-- 「今どのブランチで作業していたっけ？」
+この記事では、[kamranahmedse/claude-statusline](https://github.com/kamranahmedse/claude-statusline/tree/main/bin) を参考に実装したスクリプトをもとに、各要素を**どのコードで取得・表示するか**を解説します。
 
-Claude Code には**ステータスバーをカスタマイズする機能**があります。シェルスクリプトを1つ用意するだけで、使用状況・レートリミット・Git ブランチなどをリアルタイムで表示できます。
-
-この記事では、[kamranahmedse/claude-statusline](https://github.com/kamranahmedse/claude-statusline/tree/main/bin) と [こちらの YouTube 動画](https://www.youtube.com/watch?v=0fYBrfhsmiI) を参考に、自分の dotfiles に組み込む方法を紹介します。
-
-コードの全文は [こちらの GitHub リポジトリ](https://github.com/jam006097/dotfiles/tree/main/claude) で公開しています。
+完成したコードは [GitHub](https://github.com/jam006097/dotfiles/tree/main/claude) で公開しています。
 
 ## 完成イメージ
 
@@ -36,70 +30,11 @@ current ●●○○○○○○○○  12% ⟳ 3:45pm
 weekly  ●○○○○○○○○○   8% ⟳ may 3
 ```
 
-ひと目でわかる情報が上段に並び、下段にはレートリミットのバーが表示されます。
+上段に作業状況、下段にレートリミットのバーが表示されます。
 
-## 何が表示されるのか、そしてなぜそれが必要なのか
+## settings.json の設定
 
-ステータスバーに表示する情報はそれぞれ「作業を止めずに判断できること」を意図して選んでいます。
-
-### モデル名
-
-```
-claude-sonnet-4-6
-```
-
-複数のモデルを切り替えながら使っていると、「今どのモデルで動いているか」を忘れがちです。特に Opus と Sonnet ではレートリミットの消費速度が大きく異なるため、常に目に入る場所に置いておくことで誤操作を防げます。
-
-### コンテキスト使用率
-
-```
-✍️ 12%
-```
-
-Claude Code はセッション中のやりとりをすべてコンテキストとして保持します。これが上限（200,000 トークン前後）に近づくと、応答の精度が落ちたり、古い情報が押し出されて意図しない挙動が起きたりします。
-
-使用率が高くなってきたら「セッションを新しく始める」「`/compact` でコンテキストを圧縮する」といった判断ができます。使用率に応じてバーの色が変わるのもそのためです。50% を超えるとオレンジ、70% で黄、90% で赤になります。
-
-### 作業ディレクトリと Git ブランチ
-
-```
-zenn-content (main*)
-```
-
-Claude Code はファイルを読み書きするため、「どのブランチにいるか」を常に把握しておく必要があります。`*` はコミットされていない変更があることを示します。作業ブランチと思っていたら `main` だった、というミスをこれで防げます。
-
-### セッション経過時間
-
-```
-⏱ 5m
-```
-
-セッションが長くなるほどコンテキストは積み上がり、Claude の「記憶」は重くなります。経過時間を見ることで「そろそろ新しいセッションに切り替えどきかな」という判断の目安になります。
-
-### Effort レベル
-
-```
-◑ default
-```
-
-Claude Code には `low` / `default` / `high` の Effort レベルがあり、思考の深さとトークン消費量が変わります。設定を変えたことを忘れたまま使い続けるのを防ぐために、常に表示しています。
-
-### レートリミット（5時間・週次）
-
-```
-current ●●○○○○○○○○  12% ⟳ 3:45pm
-weekly  ●○○○○○○○○○   8% ⟳ may 3
-```
-
-Claude Code（Max プラン）には 5 時間ウィンドウと週次ウィンドウの 2 種類のレートリミットがあります。それぞれ「いつリセットされるか」も合わせて表示することで、「あと何時間待てば使えるか」を作業しながら確認できます。
-
-:::message
-レートリミットの情報は Claude Code から直接渡されます。渡されない場合は API を叩いて取得し、60 秒間キャッシュしています。毎回 API を呼ぶとステータスバーの更新が遅くなるためです。
-:::
-
-## 仕組みの概要
-
-Claude Code のステータスバーは `settings.json` に `statusLine.command` を設定するだけで有効になります。
+`~/.claude/settings.json` に以下を追加します。
 
 ```json
 {
@@ -110,26 +45,205 @@ Claude Code のステータスバーは `settings.json` に `statusLine.command`
 }
 ```
 
-Claude Code が状態を更新するたびにこのコマンドが呼び出され、スクリプトの出力がそのままステータスバーに表示されます。スクリプトには現在のモデル・コンテキスト使用量・セッション情報などが JSON 形式で渡されるので、それを読み取って整形して出力するだけです。
+Claude Code は状態が更新されるたびにこのコマンドを実行し、スクリプトの標準出力をそのままステータスバーに表示します。
 
-## dotfiles で管理するメリット
+## スクリプトの基本構造
 
-今回は `~/.claude/` に直接ファイルを置くのではなく、dotfiles リポジトリで管理してシンボリックリンクで繋ぐ構成にしています。
+Claude Code はスクリプトの**標準入力**に JSON を渡します。まずそれを受け取ります。
 
+```bash
+#!/bin/bash
+set -f  # JSON 内の * などがグロブ展開されないように無効化
+
+input=$(cat)
+
+# 入力がなければ最低限の表示をして終了
+if [ -z "$input" ]; then
+    printf "Claude"
+    exit 0
+fi
 ```
-dotfiles/claude/
-├── settings.json    # Claude Code の設定
-├── statusline.sh    # ステータスバーを生成するスクリプト
-└── setup.sh         # シンボリックリンクを張るセットアップスクリプト
+
+渡される JSON の構造は次のとおりです。
+
+```json
+{
+  "model": { "display_name": "claude-sonnet-4-6" },
+  "context_window": {
+    "context_window_size": 200000,
+    "current_usage": {
+      "input_tokens": 24000,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  },
+  "cwd": "/Users/you/project",
+  "session": { "start_time": "2026-05-03T10:00:00Z" },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 12.5, "resets_at": "2026-05-03T15:00:00Z" },
+    "seven_day":  { "used_percentage": 8.0,  "resets_at": "2026-05-10T00:00:00Z" }
+  }
+}
 ```
 
-この構成にする理由は主に 2 つです。
+以降はこの JSON を `jq` で読み取って各要素を取り出します。
 
-**1. どの環境でも同じ設定を再現できる**
-新しい Mac やサーバーでも `git clone` してセットアップスクリプトを実行するだけで環境が整います。
+## 各要素の実装コード
 
-**2. 設定の変更履歴が残る**
-dotfiles を Git で管理していれば、「いつ・何を・なぜ変えたか」をコミットメッセージで追えます。うまく動かなくなったときに前の状態に戻すことも簡単です。
+### モデル名
+
+```bash
+model_name=$(echo "$input" | jq -r '.model.display_name // "Claude"')
+```
+
+`.model.display_name` がなければ `"Claude"` にフォールバックします。
+
+### コンテキスト使用率
+
+通常のトークンに加え、キャッシュ生成・キャッシュ読み込みトークンも合算します。3種類を足してウィンドウサイズで割ることで正確な使用率が出ます。
+
+```bash
+size=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
+[ "$size" -eq 0 ] 2>/dev/null && size=200000
+
+input_tokens=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // 0')
+cache_create=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
+cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
+
+current=$(( input_tokens + cache_create + cache_read ))
+pct_used=$(( current * 100 / size ))
+```
+
+### 作業ディレクトリと Git ブランチ
+
+`.cwd` が渡されるので `basename` でディレクトリ名を取り出し、`git` コマンドでブランチを取得します。
+
+```bash
+cwd=$(echo "$input" | jq -r '.cwd // ""')
+[ -z "$cwd" ] || [ "$cwd" = "null" ] && cwd=$(pwd)
+dirname=$(basename "$cwd")
+
+git_branch=""
+git_dirty=""
+if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git_branch=$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null)
+    if [ -n "$(git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null)" ]; then
+        git_dirty="*"
+    fi
+fi
+```
+
+:::message
+`--no-optional-locks` を付けないと、Claude Code がファイルを並列操作しているときにロック競合が起きます。
+:::
+
+### セッション経過時間
+
+`.session.start_time` は ISO 8601 形式なので epoch に変換して経過秒数を計算します。macOS と Linux で `date` コマンドの書式が異なるため、両対応の処理が必要です。
+
+```bash
+session_start=$(echo "$input" | jq -r '.session.start_time // empty')
+if [ -n "$session_start" ] && [ "$session_start" != "null" ]; then
+    # Linux: date -d、macOS: date -j -f でそれぞれ変換を試みる
+    stripped="${session_start%%.*}"
+    stripped="${stripped%%Z}"
+    start_epoch=$(env TZ=UTC date -d "${stripped/T/ }" +%s 2>/dev/null || \
+                  env TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "$stripped" +%s 2>/dev/null)
+
+    if [ -n "$start_epoch" ]; then
+        elapsed=$(( $(date +%s) - start_epoch ))
+        if [ "$elapsed" -ge 3600 ]; then
+            session_duration="$(( elapsed / 3600 ))h$(( (elapsed % 3600) / 60 ))m"
+        elif [ "$elapsed" -ge 60 ]; then
+            session_duration="$(( elapsed / 60 ))m"
+        else
+            session_duration="${elapsed}s"
+        fi
+    fi
+fi
+```
+
+### Effort レベル
+
+Effort レベルは JSON では渡されません。`settings.json` を直接 `jq` で読みます。
+
+```bash
+effort="default"
+settings_path="$HOME/.claude/settings.json"
+if [ -f "$settings_path" ]; then
+    effort=$(jq -r '.effortLevel // "default"' "$settings_path" 2>/dev/null)
+fi
+```
+
+### レートリミット
+
+stdin の JSON に含まれていれば直接取得します。含まれていない場合は Anthropic API を呼び出します。
+
+```bash
+five_hour_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+
+if [ -z "$five_hour_pct" ]; then
+    # macOS キーチェーンからトークンを取得
+    blob=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
+    token=$(echo "$blob" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
+
+    # ~/.claude/.credentials.json からの取得（Linux 等）
+    if [ -z "$token" ] || [ "$token" = "null" ]; then
+        token=$(jq -r '.claudeAiOauth.accessToken // empty' \
+                "$HOME/.claude/.credentials.json" 2>/dev/null)
+    fi
+
+    response=$(curl -s --max-time 5 \
+        -H "Authorization: Bearer $token" \
+        -H "anthropic-beta: oauth-2025-04-20" \
+        -H "User-Agent: claude-code/2.1.34" \
+        "https://api.anthropic.com/api/oauth/usage")
+
+    five_hour_pct=$(echo "$response" | jq -r '.five_hour.utilization // 0' \
+                    | awk '{printf "%.0f", $1}')
+    seven_day_pct=$(echo "$response" | jq -r '.seven_day.utilization // 0' \
+                    | awk '{printf "%.0f", $1}')
+else
+    five_hour_pct=$(printf "%.0f" "$five_hour_pct")
+    seven_day_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // 0' \
+                    | awk '{printf "%.0f", $1}')
+fi
+```
+
+:::message
+API の呼び出し結果は `/tmp/claude/statusline-usage-cache.json` に 60 秒間キャッシュします。ステータスバーは頻繁に更新されるため、毎回 API を呼ぶと表示が遅くなるためです。
+:::
+
+## 出力の組み立て
+
+ANSI エスケープコードで色を定義し、`printf "%b"` で出力します。
+
+```bash
+blue='\033[38;2;0;153;255m'
+green='\033[38;2;0;175;80m'
+cyan='\033[38;2;86;182;194m'
+dim='\033[2m'
+reset='\033[0m'
+sep=" ${dim}│${reset} "
+
+# 1行目を組み立てる
+line1="${blue}${model_name}${reset}"
+line1+="${sep}✍️ ${pct_used}%"
+line1+="${sep}${cyan}${dirname}${reset}"
+[ -n "$git_branch" ] && line1+=" ${green}(${git_branch}${git_dirty})${reset}"
+[ -n "$session_duration" ] && line1+="${sep}⏱ ${session_duration}"
+line1+="${sep}${dim}◑ ${effort}${reset}"
+
+printf "%b" "$line1"
+
+# 2行目以降は \n\n で区切ると Claude Code が複数行として認識する
+if [ -n "$five_hour_pct" ]; then
+    printf "\n\ncurrent %s%%" "$five_hour_pct"
+fi
+if [ -n "$seven_day_pct" ]; then
+    printf "\nweekly  %s%%" "$seven_day_pct"
+fi
+```
 
 ## セットアップ手順
 
@@ -137,31 +251,21 @@ dotfiles を Git で管理していれば、「いつ・何を・なぜ変えた
 # 1. 依存ツールをインストール（macOS）
 brew install jq curl git
 
-# 2. dotfiles リポジトリをクローン
-git clone https://github.com/jam006097/dotfiles.git ~/dotfiles
+# 2. スクリプトを配置
+mkdir -p ~/.claude
+curl -o ~/.claude/statusline.sh \
+  https://raw.githubusercontent.com/jam006097/dotfiles/main/claude/statusline.sh
+chmod +x ~/.claude/statusline.sh
 
-# 3. 実行権限を付与
-chmod +x ~/dotfiles/claude/setup.sh
-chmod +x ~/dotfiles/claude/statusline.sh
+# 3. settings.json を編集して statusLine を追加
+# （前述の JSON を ~/.claude/settings.json に追記）
 
-# 4. セットアップを実行（シンボリックリンクが作成される）
-bash ~/dotfiles/claude/setup.sh
-
-# 5. Claude Code を再起動して反映を確認
+# 4. Claude Code を再起動して反映を確認
 ```
-
-セットアップスクリプトは実行前に `jq`・`curl`・`git` の存在を確認します。また `~/.claude/settings.json` がすでに存在する場合は `.bak` として退避してからリンクを作成するので、既存の設定を上書きしてしまう心配もありません。
 
 ## まとめ
 
-Claude Code のステータスバーは、ターミナルを離れることなく作業状況を把握するための仕組みです。
-
-- **コンテキスト使用率** → 詰め込みすぎを防ぎ、新しいセッションへの切り替えタイミングがわかる
-- **レートリミット** → いつ・どのくらい使えるかを見ながら作業量を調整できる
-- **Git ブランチ** → 作業ブランチの確認をうっかり忘れるミスがなくなる
-- **セッション時間** → 長すぎるセッションのリセットタイミングの目安になる
-
-コードの全文は [GitHub](https://github.com/jam006097/dotfiles/tree/main/claude) で公開しています。表示項目や色は自由に変更できるので、自分の作業スタイルに合わせてカスタマイズしてみてください。
+Claude Code のステータスバーは「シェルスクリプトの stdout がそのまま表示される」シンプルな仕組みです。今回紹介したキー以外にも、渡される JSON には拡張余地があります。色・区切り文字・並び順はすべてスクリプト側で自由に変えられるので、必要な情報だけを絞り込んで自分専用のステータスバーを作ってみてください。
 
 ## 参考
 
