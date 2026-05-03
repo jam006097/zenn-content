@@ -13,15 +13,13 @@ published: true
 
 ## はじめに
 
-Claude Code のステータスバーは、シェルスクリプトの標準出力をそのまま表示する仕組みです。`settings.json` に1行設定を追加するだけで有効になり、表示内容は完全に自由に組み立てられます。
+Claude Code のステータスバーは、シェルスクリプトの出力をそのまま表示する仕組みです。`settings.json` に設定を追加するだけで有効になり、表示内容は完全に自由に組み立てられます。
 
-この記事では、[kamranahmedse/claude-statusline](https://github.com/kamranahmedse/claude-statusline/tree/main/bin) を参考に実装したスクリプトをもとに、各要素を**どのコードで取得・表示するか**を解説します。
+この記事では完成したスクリプトの**全文**を示した上で、各表示項目をどのコードで実現しているかを解説します。コードをそのまま使えば同じステータスバーが作れます。
 
 完成したコードは [GitHub](https://github.com/jam006097/dotfiles/tree/main/claude) で公開しています。
 
 ## 完成イメージ
-
-Claude Code のステータスバーがこのように変わります。
 
 ```
 claude-sonnet-4-6 │ ✍️ 12% │ zenn-content (main) │ ⏱ 5m │ ◑ default
@@ -30,11 +28,28 @@ current ●●○○○○○○○○  12% ⟳ 3:45pm
 weekly  ●○○○○○○○○○   8% ⟳ may 3
 ```
 
-上段に作業状況、下段にレートリミットのバーが表示されます。
+上段にモデル名・コンテキスト使用率・作業ディレクトリ（Git ブランチ）・セッション時間・Effort レベル、下段にレートリミットのプログレスバーが表示されます。
 
-## settings.json の設定
+## 事前準備
 
-`~/.claude/settings.json` に以下を追加します。
+`jq`・`curl`・`git` が必要です。
+
+```bash
+# macOS
+brew install jq curl git
+```
+
+## ファイル構成
+
+`~/.claude/` に2つのファイルを置きます。
+
+```
+~/.claude/
+├── settings.json    # ステータスバーの有効化設定
+└── statusline.sh    # 表示内容を生成するスクリプト
+```
+
+## 1. settings.json
 
 ```json
 {
@@ -45,24 +60,348 @@ weekly  ●○○○○○○○○○   8% ⟳ may 3
 }
 ```
 
-Claude Code は状態が更新されるたびにこのコマンドを実行し、スクリプトの標準出力をそのままステータスバーに表示します。
+Claude Code は状態が更新されるたびにこのコマンドを実行し、スクリプトの標準出力をそのままステータスバーに表示します。すでに `settings.json` がある場合は `statusLine` キーだけ追記してください。
 
-## スクリプトの基本構造
+## 2. statusline.sh（完全版）
 
-Claude Code はスクリプトの**標準入力**に JSON を渡します。まずそれを受け取ります。
+以下のスクリプトを `~/.claude/statusline.sh` として保存します。
 
 ```bash
 #!/bin/bash
-set -f  # JSON 内の * などがグロブ展開されないように無効化
+set -f
 
 input=$(cat)
 
-# 入力がなければ最低限の表示をして終了
 if [ -z "$input" ]; then
     printf "Claude"
     exit 0
 fi
+
+# ── Colors ──────────────────────────────────────────────
+blue='\033[38;2;0;153;255m'
+orange='\033[38;2;255;176;85m'
+green='\033[38;2;0;175;80m'
+cyan='\033[38;2;86;182;194m'
+red='\033[38;2;255;85;85m'
+yellow='\033[38;2;230;200;0m'
+white='\033[38;2;220;220;220m'
+magenta='\033[38;2;180;140;255m'
+dim='\033[2m'
+reset='\033[0m'
+
+sep=" ${dim}│${reset} "
+
+# ── Helpers ─────────────────────────────────────────────
+color_for_pct() {
+    local pct=$1
+    if [ "$pct" -ge 90 ]; then printf "$red"
+    elif [ "$pct" -ge 70 ]; then printf "$yellow"
+    elif [ "$pct" -ge 50 ]; then printf "$orange"
+    else printf "$green"
+    fi
+}
+
+build_bar() {
+    local pct=$1
+    local width=$2
+    [ "$pct" -lt 0 ] 2>/dev/null && pct=0
+    [ "$pct" -gt 100 ] 2>/dev/null && pct=100
+
+    local filled=$(( pct * width / 100 ))
+    local empty=$(( width - filled ))
+    local bar_color
+    bar_color=$(color_for_pct "$pct")
+
+    local filled_str="" empty_str=""
+    for ((i=0; i<filled; i++)); do filled_str+="●"; done
+    for ((i=0; i<empty; i++)); do empty_str+="○"; done
+
+    printf "${bar_color}${filled_str}${dim}${empty_str}${reset}"
+}
+
+format_epoch_time() {
+    local epoch=$1
+    local style=$2
+    [ -z "$epoch" ] || [ "$epoch" = "null" ] || [ "$epoch" = "0" ] && return
+
+    local result=""
+    case "$style" in
+        time)
+            result=$(date -j -r "$epoch" +"%l:%M%p" 2>/dev/null)
+            [ -z "$result" ] && result=$(date -d "@$epoch" +"%l:%M%P" 2>/dev/null)
+            result=$(echo "$result" | sed 's/^ //; s/\.//g' | tr '[:upper:]' '[:lower:]')
+            ;;
+        datetime)
+            result=$(date -j -r "$epoch" +"%b %-d, %l:%M%p" 2>/dev/null)
+            [ -z "$result" ] && result=$(date -d "@$epoch" +"%b %-d, %l:%M%P" 2>/dev/null)
+            result=$(echo "$result" | sed 's/  / /g; s/^ //; s/\.//g' | tr '[:upper:]' '[:lower:]')
+            ;;
+        *)
+            result=$(date -j -r "$epoch" +"%b %-d" 2>/dev/null)
+            [ -z "$result" ] && result=$(date -d "@$epoch" +"%b %-d" 2>/dev/null)
+            result=$(echo "$result" | tr '[:upper:]' '[:lower:]')
+            ;;
+    esac
+    printf "%s" "$result"
+}
+
+iso_to_epoch() {
+    local iso_str="$1"
+
+    local epoch
+    epoch=$(date -d "${iso_str}" +%s 2>/dev/null)
+    if [ -n "$epoch" ]; then
+        echo "$epoch"
+        return 0
+    fi
+
+    local stripped="${iso_str%%.*}"
+    stripped="${stripped%%Z}"
+    stripped="${stripped%%+*}"
+    stripped="${stripped%%-[0-9][0-9]:[0-9][0-9]}"
+
+    if [[ "$iso_str" == *"Z"* ]] || [[ "$iso_str" == *"+00:00"* ]] || [[ "$iso_str" == *"-00:00"* ]]; then
+        epoch=$(env TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "$stripped" +%s 2>/dev/null)
+        [ -z "$epoch" ] && epoch=$(env TZ=UTC date -d "${stripped/T/ }" +%s 2>/dev/null)
+    else
+        epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$stripped" +%s 2>/dev/null)
+        [ -z "$epoch" ] && epoch=$(date -d "${stripped/T/ }" +%s 2>/dev/null)
+    fi
+
+    if [ -n "$epoch" ]; then
+        echo "$epoch"
+        return 0
+    fi
+
+    return 1
+}
+
+# ── Extract JSON data ───────────────────────────────────
+model_name=$(echo "$input" | jq -r '.model.display_name // "Claude"')
+
+size=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
+[ "$size" -eq 0 ] 2>/dev/null && size=200000
+
+input_tokens=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // 0')
+cache_create=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
+cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
+current=$(( input_tokens + cache_create + cache_read ))
+
+if [ "$size" -gt 0 ]; then
+    pct_used=$(( current * 100 / size ))
+else
+    pct_used=0
+fi
+
+effort="default"
+settings_path="$HOME/.claude/settings.json"
+if [ -f "$settings_path" ]; then
+    effort=$(jq -r '.effortLevel // "default"' "$settings_path" 2>/dev/null)
+fi
+
+# ── LINE 1 ──────────────────────────────────────────────
+pct_color=$(color_for_pct "$pct_used")
+cwd=$(echo "$input" | jq -r '.cwd // ""')
+[ -z "$cwd" ] || [ "$cwd" = "null" ] && cwd=$(pwd)
+dirname=$(basename "$cwd")
+
+git_branch=""
+git_dirty=""
+if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git_branch=$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null)
+    if [ -n "$(git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null)" ]; then
+        git_dirty="*"
+    fi
+fi
+
+session_duration=""
+session_start=$(echo "$input" | jq -r '.session.start_time // empty')
+if [ -n "$session_start" ] && [ "$session_start" != "null" ]; then
+    start_epoch=$(iso_to_epoch "$session_start")
+    if [ -n "$start_epoch" ]; then
+        now_epoch=$(date +%s)
+        elapsed=$(( now_epoch - start_epoch ))
+        if [ "$elapsed" -ge 3600 ]; then
+            session_duration="$(( elapsed / 3600 ))h$(( (elapsed % 3600) / 60 ))m"
+        elif [ "$elapsed" -ge 60 ]; then
+            session_duration="$(( elapsed / 60 ))m"
+        else
+            session_duration="${elapsed}s"
+        fi
+    fi
+fi
+
+skip_perms=""
+parent_cmd=$(ps -o args= -p "$PPID" 2>/dev/null)
+if [[ "$parent_cmd" == *"--dangerously-skip-permissions"* ]]; then
+    skip_perms="⚡  "
+fi
+
+line1="${blue}${model_name}${reset}"
+line1+="${sep}"
+line1+="✍️ ${pct_color}${pct_used}%${reset}"
+line1+="${sep}"
+line1+="${skip_perms}${cyan}${dirname}${reset}"
+if [ -n "$git_branch" ]; then
+    line1+=" ${green}(${git_branch}${red}${git_dirty}${green})${reset}"
+fi
+if [ -n "$session_duration" ]; then
+    line1+="${sep}"
+    line1+="${dim}⏱ ${reset}${white}${session_duration}${reset}"
+fi
+line1+="${sep}"
+case "$effort" in
+    high)   line1+="${magenta}● ${effort}${reset}" ;;
+    medium) line1+="${dim}◑ ${effort}${reset}" ;;
+    low)    line1+="${dim}◔ ${effort}${reset}" ;;
+    *)      line1+="${dim}◑ ${effort}${reset}" ;;
+esac
+
+# ── Rate limits from stdin ───────────────────────────────
+has_stdin_rates=false
+five_hour_pct=""
+five_hour_reset_epoch=""
+seven_day_pct=""
+seven_day_reset_epoch=""
+
+stdin_five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+if [ -n "$stdin_five_pct" ]; then
+    has_stdin_rates=true
+    five_hour_pct=$(printf "%.0f" "$stdin_five_pct")
+    five_hour_reset_epoch=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+    seven_day_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' | awk '{printf "%.0f", $1}')
+    seven_day_reset_epoch=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+fi
+
+# ── Fallback: API call (cached 60s) ─────────────────────
+cache_file="/tmp/claude/statusline-usage-cache.json"
+cache_max_age=60
+mkdir -p /tmp/claude
+
+usage_data=""
+extra_enabled="false"
+
+if ! $has_stdin_rates; then
+    needs_refresh=true
+
+    if [ -f "$cache_file" ]; then
+        cache_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || stat -f %m "$cache_file" 2>/dev/null)
+        now=$(date +%s)
+        cache_age=$(( now - cache_mtime ))
+        if [ "$cache_age" -lt "$cache_max_age" ]; then
+            needs_refresh=false
+            usage_data=$(cat "$cache_file" 2>/dev/null)
+        fi
+    fi
+
+    if $needs_refresh; then
+        token=""
+        if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            token="$CLAUDE_CODE_OAUTH_TOKEN"
+        elif command -v security >/dev/null 2>&1; then
+            blob=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
+            if [ -n "$blob" ]; then
+                token=$(echo "$blob" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
+            fi
+        fi
+        if [ -z "$token" ] || [ "$token" = "null" ]; then
+            creds_file="${HOME}/.claude/.credentials.json"
+            if [ -f "$creds_file" ]; then
+                token=$(jq -r '.claudeAiOauth.accessToken // empty' "$creds_file" 2>/dev/null)
+            fi
+        fi
+
+        if [ -n "$token" ] && [ "$token" != "null" ]; then
+            response=$(curl -s --max-time 5 \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $token" \
+                -H "anthropic-beta: oauth-2025-04-20" \
+                -H "User-Agent: claude-code/2.1.34" \
+                "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
+            if [ -n "$response" ] && echo "$response" | jq -e '.five_hour' >/dev/null 2>&1; then
+                usage_data="$response"
+                echo "$response" > "$cache_file"
+            fi
+        fi
+        if [ -z "$usage_data" ] && [ -f "$cache_file" ]; then
+            usage_data=$(cat "$cache_file" 2>/dev/null)
+        fi
+    fi
+
+    if [ -n "$usage_data" ] && echo "$usage_data" | jq -e . >/dev/null 2>&1; then
+        five_hour_pct=$(echo "$usage_data" | jq -r '.five_hour.utilization // 0' | awk '{printf "%.0f", $1}')
+        five_hour_reset_iso=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
+        five_hour_reset_epoch=$(iso_to_epoch "$five_hour_reset_iso")
+        seven_day_pct=$(echo "$usage_data" | jq -r '.seven_day.utilization // 0' | awk '{printf "%.0f", $1}')
+        seven_day_reset_iso=$(echo "$usage_data" | jq -r '.seven_day.resets_at // empty')
+        seven_day_reset_epoch=$(iso_to_epoch "$seven_day_reset_iso")
+        extra_enabled=$(echo "$usage_data" | jq -r '.extra_usage.is_enabled // false')
+    fi
+else
+    if [ -f "$cache_file" ]; then
+        usage_data=$(cat "$cache_file" 2>/dev/null)
+        if [ -n "$usage_data" ] && echo "$usage_data" | jq -e . >/dev/null 2>&1; then
+            extra_enabled=$(echo "$usage_data" | jq -r '.extra_usage.is_enabled // false')
+        fi
+    fi
+fi
+
+# ── Rate limit lines ─────────────────────────────────────
+rate_lines=""
+bar_width=10
+
+if [ -n "$five_hour_pct" ]; then
+    five_hour_reset=$(format_epoch_time "$five_hour_reset_epoch" "time")
+    five_hour_bar=$(build_bar "$five_hour_pct" "$bar_width")
+    five_hour_pct_color=$(color_for_pct "$five_hour_pct")
+    five_hour_pct_fmt=$(printf "%3d" "$five_hour_pct")
+
+    rate_lines+="${white}current${reset} ${five_hour_bar} ${five_hour_pct_color}${five_hour_pct_fmt}%${reset}"
+    [ -n "$five_hour_reset" ] && rate_lines+=" ${dim}⟳${reset} ${white}${five_hour_reset}${reset}"
+fi
+
+if [ -n "$seven_day_pct" ]; then
+    seven_day_reset=$(format_epoch_time "$seven_day_reset_epoch" "datetime")
+    seven_day_bar=$(build_bar "$seven_day_pct" "$bar_width")
+    seven_day_pct_color=$(color_for_pct "$seven_day_pct")
+    seven_day_pct_fmt=$(printf "%3d" "$seven_day_pct")
+
+    [ -n "$rate_lines" ] && rate_lines+="\n"
+    rate_lines+="${white}weekly${reset}  ${seven_day_bar} ${seven_day_pct_color}${seven_day_pct_fmt}%${reset}"
+    [ -n "$seven_day_reset" ] && rate_lines+=" ${dim}⟳${reset} ${white}${seven_day_reset}${reset}"
+fi
+
+if [ "$extra_enabled" = "true" ] && [ -n "$usage_data" ]; then
+    extra_pct=$(echo "$usage_data" | jq -r '.extra_usage.utilization // 0' | awk '{printf "%.0f", $1}')
+    extra_used=$(echo "$usage_data" | jq -r '.extra_usage.used_credits // 0' | awk '{printf "%.2f", $1/100}')
+    extra_limit=$(echo "$usage_data" | jq -r '.extra_usage.monthly_limit // 0' | awk '{printf "%.2f", $1/100}')
+    extra_bar=$(build_bar "$extra_pct" "$bar_width")
+    extra_pct_color=$(color_for_pct "$extra_pct")
+
+    extra_reset=$(date -v+1m -v1d +"%b %-d" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    if [ -z "$extra_reset" ]; then
+        extra_reset=$(date -d "$(date +%Y-%m-01) +1 month" +"%b %-d" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    fi
+
+    [ -n "$rate_lines" ] && rate_lines+="\n"
+    rate_lines+="${white}extra${reset}   ${extra_bar} ${extra_pct_color}\$${extra_used}${dim}/${reset}${white}\$${extra_limit}${reset} ${dim}⟳${reset} ${white}${extra_reset}${reset}"
+fi
+
+# ── Output ───────────────────────────────────────────────
+printf "%b" "$line1"
+[ -n "$rate_lines" ] && printf "\n\n%b" "$rate_lines"
+
+exit 0
 ```
+
+## スクリプトの解説
+
+全体の流れは「JSON を受け取る → 各値を取り出す → 1行目を組み立てる → レートリミットを取得して出力する」です。
+
+### 仕組み：Claude Code がスクリプトに JSON を渡す
+
+Claude Code はスクリプトの**標準入力**に JSON を渡します。`input=$(cat)` で受け取り、空なら即終了します。
 
 渡される JSON の構造は次のとおりです。
 
@@ -80,192 +419,119 @@ fi
   "cwd": "/Users/you/project",
   "session": { "start_time": "2026-05-03T10:00:00Z" },
   "rate_limits": {
-    "five_hour": { "used_percentage": 12.5, "resets_at": "2026-05-03T15:00:00Z" },
-    "seven_day":  { "used_percentage": 8.0,  "resets_at": "2026-05-10T00:00:00Z" }
+    "five_hour": { "used_percentage": 12.5, "resets_at": "..." },
+    "seven_day":  { "used_percentage": 8.0,  "resets_at": "..." }
   }
 }
 ```
 
-以降はこの JSON を `jq` で読み取って各要素を取り出します。
+以降はこの JSON を `jq` で読み取って各値を取り出します。
 
-## 各要素の実装コード
-
-### モデル名
+### モデル名の表示
 
 ```bash
 model_name=$(echo "$input" | jq -r '.model.display_name // "Claude"')
 ```
 
-`.model.display_name` がなければ `"Claude"` にフォールバックします。
+`jq -r` で JSON から文字列を取り出します。`// "Claude"` はキーが存在しないときのフォールバックです。
 
-### コンテキスト使用率
+### コンテキスト使用率の計算
 
-通常のトークンに加え、キャッシュ生成・キャッシュ読み込みトークンも合算します。3種類を足してウィンドウサイズで割ることで正確な使用率が出ます。
+コンテキストは3種類のトークンに分かれているため、すべて合算してから割り算します。
 
 ```bash
-size=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
-[ "$size" -eq 0 ] 2>/dev/null && size=200000
-
 input_tokens=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // 0')
 cache_create=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
 cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
-
 current=$(( input_tokens + cache_create + cache_read ))
 pct_used=$(( current * 100 / size ))
 ```
 
+使用率に応じて色を変えるのが `color_for_pct` 関数です。50% 超でオレンジ、70% 超で黄、90% 超で赤になります。
+
 ### 作業ディレクトリと Git ブランチ
 
-`.cwd` が渡されるので `basename` でディレクトリ名を取り出し、`git` コマンドでブランチを取得します。
+`.cwd` でカレントディレクトリのパスが渡されます。`basename` でフォルダ名だけ取り出し、`git` コマンドでブランチ名と未コミット変更の有無を取得します。
 
 ```bash
-cwd=$(echo "$input" | jq -r '.cwd // ""')
-[ -z "$cwd" ] || [ "$cwd" = "null" ] && cwd=$(pwd)
 dirname=$(basename "$cwd")
-
-git_branch=""
-git_dirty=""
-if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git_branch=$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null)
-    if [ -n "$(git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null)" ]; then
-        git_dirty="*"
-    fi
-fi
+git_branch=$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null)
+git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null
 ```
 
 :::message
-`--no-optional-locks` を付けないと、Claude Code がファイルを並列操作しているときにロック競合が起きます。
+`--no-optional-locks` は必須です。Claude Code がファイルを並列操作しているときに `git status` がロックファイルを作成すると競合が起きるため、ロック取得をスキップしています。
 :::
 
-### セッション経過時間
+未コミット変更があれば `git_dirty="*"` をセットし、ブランチ名の後ろに `*` を付けて出力します。
 
-`.session.start_time` は ISO 8601 形式なので epoch に変換して経過秒数を計算します。macOS と Linux で `date` コマンドの書式が異なるため、両対応の処理が必要です。
+### セッション経過時間の計算
+
+`.session.start_time` が ISO 8601 形式（`2026-05-03T10:00:00Z`）で渡されます。これを Unix タイムスタンプに変換して現在時刻との差を計算します。
+
+macOS と Linux で `date` コマンドの書式が異なるため、`iso_to_epoch` 関数で両方を試みています。変換できたら `elapsed` 秒を `5m` や `1h30m` の形式に整形します。
+
+### Effort レベルの取得
+
+Effort レベルは JSON には含まれません。`settings.json` を直接 `jq` で読み取ります。
 
 ```bash
-session_start=$(echo "$input" | jq -r '.session.start_time // empty')
-if [ -n "$session_start" ] && [ "$session_start" != "null" ]; then
-    # Linux: date -d、macOS: date -j -f でそれぞれ変換を試みる
-    stripped="${session_start%%.*}"
-    stripped="${stripped%%Z}"
-    start_epoch=$(env TZ=UTC date -d "${stripped/T/ }" +%s 2>/dev/null || \
-                  env TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "$stripped" +%s 2>/dev/null)
-
-    if [ -n "$start_epoch" ]; then
-        elapsed=$(( $(date +%s) - start_epoch ))
-        if [ "$elapsed" -ge 3600 ]; then
-            session_duration="$(( elapsed / 3600 ))h$(( (elapsed % 3600) / 60 ))m"
-        elif [ "$elapsed" -ge 60 ]; then
-            session_duration="$(( elapsed / 60 ))m"
-        else
-            session_duration="${elapsed}s"
-        fi
-    fi
-fi
+effort=$(jq -r '.effortLevel // "default"' "$HOME/.claude/settings.json" 2>/dev/null)
 ```
 
-### Effort レベル
+`high` / `medium` / `low` / `default` に応じてアイコン（`●` `◑` `◔`）と色を変えています。
 
-Effort レベルは JSON では渡されません。`settings.json` を直接 `jq` で読みます。
+### レートリミットの取得（stdin → API フォールバック）
+
+レートリミットは最初に stdin の JSON から取得を試みます。
 
 ```bash
-effort="default"
-settings_path="$HOME/.claude/settings.json"
-if [ -f "$settings_path" ]; then
-    effort=$(jq -r '.effortLevel // "default"' "$settings_path" 2>/dev/null)
-fi
+stdin_five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 ```
 
-### レートリミット
+含まれていない場合は Anthropic API（`/api/oauth/usage`）を叩きます。認証トークンは macOS キーチェーン → `~/.claude/.credentials.json` → 環境変数 `CLAUDE_CODE_OAUTH_TOKEN` の順で探します。
 
-stdin の JSON に含まれていれば直接取得します。含まれていない場合は Anthropic API を呼び出します。
+API の結果は `/tmp/claude/statusline-usage-cache.json` に **60 秒間キャッシュ**します。ステータスバーは頻繁に更新されるため、毎回 API を呼ぶと表示が遅くなるためです。
 
-```bash
-five_hour_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+Extra Usage（従量課金）が有効な場合は3行目に `extra` 行も追加されます。
 
-if [ -z "$five_hour_pct" ]; then
-    # macOS キーチェーンからトークンを取得
-    blob=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
-    token=$(echo "$blob" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
+### 出力の組み立て
 
-    # ~/.claude/.credentials.json からの取得（Linux 等）
-    if [ -z "$token" ] || [ "$token" = "null" ]; then
-        token=$(jq -r '.claudeAiOauth.accessToken // empty' \
-                "$HOME/.claude/.credentials.json" 2>/dev/null)
-    fi
-
-    response=$(curl -s --max-time 5 \
-        -H "Authorization: Bearer $token" \
-        -H "anthropic-beta: oauth-2025-04-20" \
-        -H "User-Agent: claude-code/2.1.34" \
-        "https://api.anthropic.com/api/oauth/usage")
-
-    five_hour_pct=$(echo "$response" | jq -r '.five_hour.utilization // 0' \
-                    | awk '{printf "%.0f", $1}')
-    seven_day_pct=$(echo "$response" | jq -r '.seven_day.utilization // 0' \
-                    | awk '{printf "%.0f", $1}')
-else
-    five_hour_pct=$(printf "%.0f" "$five_hour_pct")
-    seven_day_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // 0' \
-                    | awk '{printf "%.0f", $1}')
-fi
-```
-
-:::message
-API の呼び出し結果は `/tmp/claude/statusline-usage-cache.json` に 60 秒間キャッシュします。ステータスバーは頻繁に更新されるため、毎回 API を呼ぶと表示が遅くなるためです。
-:::
-
-## 出力の組み立て
-
-ANSI エスケープコードで色を定義し、`printf "%b"` で出力します。
+ANSI エスケープコードで文字に色を付け、`printf "%b"` で出力します。
 
 ```bash
-blue='\033[38;2;0;153;255m'
-green='\033[38;2;0;175;80m'
-cyan='\033[38;2;86;182;194m'
-dim='\033[2m'
-reset='\033[0m'
-sep=" ${dim}│${reset} "
+# 1行目を文字列として組み立てる
+line1="${blue}${model_name}${reset}${sep}✍️ ${pct_color}${pct_used}%${reset}..."
 
-# 1行目を組み立てる
-line1="${blue}${model_name}${reset}"
-line1+="${sep}✍️ ${pct_used}%"
-line1+="${sep}${cyan}${dirname}${reset}"
-[ -n "$git_branch" ] && line1+=" ${green}(${git_branch}${git_dirty})${reset}"
-[ -n "$session_duration" ] && line1+="${sep}⏱ ${session_duration}"
-line1+="${sep}${dim}◑ ${effort}${reset}"
-
+# 最後にまとめて出力
 printf "%b" "$line1"
 
-# 2行目以降は \n\n で区切ると Claude Code が複数行として認識する
-if [ -n "$five_hour_pct" ]; then
-    printf "\n\ncurrent %s%%" "$five_hour_pct"
-fi
-if [ -n "$seven_day_pct" ]; then
-    printf "\nweekly  %s%%" "$seven_day_pct"
-fi
+# \n\n で区切ると Claude Code が2行目として認識する
+[ -n "$rate_lines" ] && printf "\n\n%b" "$rate_lines"
 ```
+
+`build_bar` 関数は使用率から `●○` のプログレスバーを組み立てます。幅（`bar_width=10`）を変えると棒グラフの長さが変わります。
 
 ## セットアップ手順
 
 ```bash
-# 1. 依存ツールをインストール（macOS）
+# 1. 依存ツールをインストール
 brew install jq curl git
 
-# 2. スクリプトを配置
-mkdir -p ~/.claude
-curl -o ~/.claude/statusline.sh \
-  https://raw.githubusercontent.com/jam006097/dotfiles/main/claude/statusline.sh
+# 2. スクリプトを保存
+#    上記「statusline.sh 完全版」の内容を ~/.claude/statusline.sh に保存する
+
+# 3. 実行権限を付与
 chmod +x ~/.claude/statusline.sh
 
-# 3. settings.json を編集して statusLine を追加
-# （前述の JSON を ~/.claude/settings.json に追記）
+# 4. ~/.claude/settings.json に statusLine を追記して保存
 
-# 4. Claude Code を再起動して反映を確認
+# 5. Claude Code を再起動して反映を確認
 ```
 
 ## まとめ
 
-Claude Code のステータスバーは「シェルスクリプトの stdout がそのまま表示される」シンプルな仕組みです。今回紹介したキー以外にも、渡される JSON には拡張余地があります。色・区切り文字・並び順はすべてスクリプト側で自由に変えられるので、必要な情報だけを絞り込んで自分専用のステータスバーを作ってみてください。
+Claude Code のステータスバーは「シェルスクリプトの stdout がそのまま表示される」シンプルな仕組みです。JSON のキー構造を把握すれば、`jq` で好きなフィールドを取り出してフォーマットするだけです。色・区切り文字・並び順・追加項目はすべてスクリプト側で自由に変えられます。
 
 ## 参考
 
