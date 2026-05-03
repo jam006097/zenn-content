@@ -22,10 +22,11 @@ Claude Code のステータスバーは、シェルスクリプトの出力を�
 ## 完成イメージ
 
 ```
-claude-sonnet-4-6 │ ✍️ 12% │ zenn-content (main) │ ⏱ 5m │ ◑ default
+claude-sonnet-4-6 │ ✍️ 49% │ zenn-content (main) │ ⏱ 5m │ ◑ default
 
-current ●●○○○○○○○○  12% ⟳ 3:45pm
-weekly  ●○○○○○○○○○   8% ⟳ may 3
+current ●●●●○○○○○○  49% ⟳ 1:10am
+weekly  ●○○○○○○○○○  17% ⟳ may 4, 2:00am
+extra   ○○○○○○○○○○ $0.00/$20.00 ⟳ jun 1
 ```
 
 上段にモデル名・コンテキスト使用率・作業ディレクトリ（Git ブランチ）・セッション時間・Effort レベル、下段にレートリミットのプログレスバーが表示されます。
@@ -475,7 +476,11 @@ macOS と Linux で `date` コマンドの書式が異なるため、`iso_to_epo
 
 ### Effort レベルの取得
 
-Effort レベルは JSON には含まれません。`settings.json` を直接 `jq` で読み取ります。
+Effort レベルとは、Claude Code が回答を生成するときの**思考の深さ**を制御する設定です。`low` / `default` / `high` の3段階あり、`high` にするほど内部でより多くのステップを踏んで考えるため、回答の品質は上がりますがトークン消費とレートリミットの消費も増えます。`/effort high` などのコマンドで切り替えられます。
+
+設定を変えたことを忘れて高消費のまま使い続けるのを防ぐために、常にステータスバーに表示しています。
+
+Effort レベルは Claude Code から渡される JSON には含まれません。`settings.json` を直接 `jq` で読み取ります。
 
 ```bash
 effort=$(jq -r '.effortLevel // "default"' "$HOME/.claude/settings.json" 2>/dev/null)
@@ -587,23 +592,6 @@ printf "%b" "$line1"
 ```
 
 `build_bar` 関数は使用率から `●○` のプログレスバーを組み立てます。幅（`bar_width=10`）を変えると棒グラフの長さが変わります。
-
-## セットアップ手順
-
-```bash
-# 1. 依存ツールをインストール
-brew install jq curl git
-
-# 2. スクリプトを保存
-#    上記「statusline.sh 完全版」の内容を ~/.claude/statusline.sh に保存する
-
-# 3. 実行権限を付与
-chmod +x ~/.claude/statusline.sh
-
-# 4. ~/.claude/settings.json に statusLine を追記して保存
-
-# 5. Claude Code を再起動して反映を確認
-```
 
 ## まとめ
 
